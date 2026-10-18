@@ -20,8 +20,7 @@ namespace NOSaveSystem
     {
         public const string PLUGIN_GUID = "com.lorenzo.nosavesystem";
         public const string PLUGIN_NAME = "NOSaveSystem";
-        public const string PLUGIN_VERSION = "1.0.0"; // strict semver (no letters)
-        /// <summary>v0.11.0: numeric build id, logged ONLY in FINGERPRINT as build=N (never in version/filename/zip).</summary>
+        public const string PLUGIN_VERSION = "1.0.0";
         public const int BUILD_ID = 1;
 
         internal static ManualLogSource Log;
@@ -54,24 +53,17 @@ namespace NOSaveSystem
         private ConfigEntry<bool> _restoreAllObjectiveStatus;
         private Harmony _harmony;
 
-        /// <summary>True while F5/F6/Continue restore is running. Ignores further hotkeys/UI.</summary>
         private bool _opBusy;
-        /// <summary>UnscaledTime until which new ops are ignored after finish (1s debounce).</summary>
         private float _busyCooldownUntil;
-        /// <summary>v0.9.0: unscaled time busy began; a busy flag older than BusyStaleSec is cleared (coroutine killed).</summary>
         private float _busySince;
-        // v0.9.1: 600s (> worst-case MissionReload ~310s: teardown 45 + net 30 + host 180 + purges/settles).
         private const float BusyStaleSec = 600f;
 
         private const string SaveFileName = "midmission_autosave.json";
         internal string SaveDirectory => _saveDir.Value;
         internal static string AutosaveFileName => SaveFileName;
-        /// <summary>v0.10.0: save-menu Load sets this to a specific save file for the duration of one restore; null = autosave.</summary>
         internal static string LoadPathOverride;
-        /// <summary>v0.10.0: archive stamp shared by the .json and .json.deep archive copies of one save.</summary>
         internal static string PendingArchiveStamp;
         internal string AutosavePath => Path.Combine(_saveDir.Value, SaveFileName);
-        /// <summary>v0.10.0: file a restore reads (override from the save menu if it exists, else the autosave).</summary>
         internal string ResolveLoadPath()
         {
             var o = LoadPathOverride;
@@ -79,33 +71,29 @@ namespace NOSaveSystem
             return AutosavePath;
         }
 
-        /// <summary>v0.10.0 compliance: NOSave only runs in a singleplayer session hosted locally.</summary>
         internal static bool SpHost()
         {
             try
             {
                 if (GameManager.gameState != GameState.SinglePlayer) return false;
-                if (PlayingFromEditor()) return false; // v0.10.1 (L8): never in mission-editor test play
+                if (PlayingFromEditor()) return false;
                 var nm = NetworkManagerNuclearOption.i;
                 var srv = nm != null ? nm.Server : null;
                 if (srv == null || !srv.Active) return false;
-                // v0.11.1 (SP hardening, mirrors NOFreeHangar's lock): we are the host with a local player, and no remote player
                 if (!srv.IsHost || srv.LocalPlayer == null) return false;
                 if (srv.AllPlayers == null) return false;
                 int n = srv.AllPlayers.Count;
                 if (n > 1) { NoteMp(n, "gate"); return false; }
-                if (_mpLatched) return false; // a remote peer was seen in this scene: stays blocked until the next scene load
+                if (_mpLatched) return false;
                 return true;
             }
             catch { return false; }
         }
 
-        // ------------------------------------------------------------------ v0.11.1: MP detection (no config bypass)
         private static bool _mpLatched;
         private static float _gatePollAt;
         internal static bool MpLatched { get { return _mpLatched; } }
 
-        /// <summary>A remote peer was seen: hide every NOSave UI, block save/load until the next scene load. Logs once per scene.</summary>
         internal static void NoteMp(int players, string where)
         {
             if (_mpLatched) return;
@@ -114,7 +102,6 @@ namespace NOSaveSystem
             try { NoSaveV0100.OnMpDetected(); } catch { }
         }
 
-        /// <summary>Runs from Update once per realtime second while a mission scene is up: catches a player joining.</summary>
         private static void GatePoll()
         {
             float now = Time.realtimeSinceStartup;
@@ -125,7 +112,6 @@ namespace NOSaveSystem
                 if (GameManager.gameState == GameState.Menu) return;
                 var nm = NetworkManagerNuclearOption.i;
                 var srv = nm != null ? nm.Server : null;
-                // a remote player on our own server (a client of someone else's server already fails SpHost: no local server)
                 if (srv != null && srv.Active && srv.AllPlayers != null && srv.AllPlayers.Count > 1) NoteMp(srv.AllPlayers.Count, "poll");
             }
             catch { }
@@ -133,7 +119,6 @@ namespace NOSaveSystem
 
         private static FieldInfoCache _editorFlag;
         private sealed class FieldInfoCache { public System.Reflection.FieldInfo F; public System.Reflection.PropertyInfo P; }
-        /// <summary>v0.10.1 (L8): GameManager.IsPlayingFromEditor via reflection (absent in some builds -> false).</summary>
         internal static bool PlayingFromEditor()
         {
             try
@@ -148,14 +133,11 @@ namespace NOSaveSystem
                 if (_editorFlag.P != null) return (bool)_editorFlag.P.GetValue(null, null);
             }
             catch { }
-            // v0.10.2e (B13): flag missing/unreadable in this game build -> decide from editor markers in the scene:
-            // no markers -> allow; markers -> treat as editor play (NOSave off) and warn once.
             string marker = EditorMarker();
             if (marker == null) return false;
             if (!_editorWarned)
             {
                 _editorWarned = true;
-                // v0.10.2f (E5): LogWarning only - the NOSave UI is hidden by this same gate, a status line would never show
                 Log?.LogWarning("NOSaveSystem: editor-play flag not readable and editor marker found (" + marker + ") - NOSave disabled while it is present");
             }
             return true;
@@ -163,12 +145,9 @@ namespace NOSaveSystem
         private static bool _editorWarned;
 
         private static Type _missionEditorType; private static bool _missionEditorLooked;
-        /// <summary>v0.10.2e (B13): editor markers: GameState.Editor, a live MissionEditor scene singleton, or a loaded
-        /// scene whose name contains "Editor". Null = none found.</summary>
         private static float _markerAt = -100f; private static string _markerCache;
         internal static string EditorMarker()
         {
-            // only reached when the flag is missing; cached for 1 s (the UI gate calls this every frame)
             float now = Time.realtimeSinceStartup;
             if (now - _markerAt < 1f) return _markerCache;
             _markerAt = now; _markerCache = EditorMarkerNow();
@@ -176,8 +155,6 @@ namespace NOSaveSystem
         }
         private static string EditorMarkerNow()
         {
-            // v0.10.2f (E5): only GameState.Editor or an active-in-hierarchy MissionEditor component (type resolved by
-            // reflection). No scene-name matching.
             try { if (GameManager.gameState == GameState.Editor) return "gameState=Editor"; } catch { }
             try
             {
@@ -192,7 +169,6 @@ namespace NOSaveSystem
             return null;
         }
 
-        /// <summary>v0.10.2d (B13): how the editor-play flag is read (logged in FINGERPRINT).</summary>
         internal static string EditorFlagSource()
         {
             try { PlayingFromEditor(); } catch { }
@@ -203,14 +179,9 @@ namespace NOSaveSystem
             return m == null ? "WARN MISSING(no editor markers -> allowed)" : "WARN MISSING(editor marker " + m + " -> NOSave off)";
         }
 
-        /// <summary>v0.10.1 (M2): the save last loaded from the save menu. F6 reloads this file (not the autosave)
-        /// until the next successful save. Cleared on save and when that file is deleted from the menu (not on scene
-        /// unload, because a MissionReload unloads scenes itself).</summary>
         internal static string LastLoadedPath;
-        /// <summary>v0.10.1 (L5): incremented after every successful snapshot write (save menu uses it instead of timestamps).</summary>
         internal static int SaveCounter;
 
-        /// <summary>v0.10.1 (M2): F6 / pause-panel Load: the save picked in the menu if one was loaded, else the autosave.</summary>
         internal void LoadLatestOrLast()
         {
             string last = LastLoadedPath;
@@ -220,7 +191,6 @@ namespace NOSaveSystem
             else { LastLoadedPath = null; RestoreMidMissionSnapshot(); }
         }
 
-        /// <summary>v0.10.0 compliance: Continue starts from the main menu (no session yet) and always hosts Offline/SinglePlayer.</summary>
         internal static bool ContinueAllowed()
         {
             try
@@ -228,7 +198,7 @@ namespace NOSaveSystem
                 if (GameManager.gameState != GameState.Menu) return false;
                 if (PlayingFromEditor()) return false;
                 var nm = NetworkManagerNuclearOption.i;
-                if (nm != null && nm.Server != null && nm.Server.Active) return false; // still hosting something
+                if (nm != null && nm.Server != null && nm.Server.Active) return false;
                 return true;
             }
             catch { return false; }
@@ -236,11 +206,6 @@ namespace NOSaveSystem
 
         private static float _gateWarnAt = -100f; private static string _gateWarnOp;
 
-        /// <summary>v0.10.2: the ONE singleplayer gate for every save / load / delete / menu / hotkey / UI path.
-        /// In-mission paths require <see cref="SpHost"/> (SinglePlayer state + local server active + not editor play);
-        /// the main-menu Continue paths (button, F8, AutoContinue) require <see cref="ContinueAllowed"/> (main menu, nothing
-        /// hosted, not editor) and always host an offline singleplayer session. No config option takes part in this
-        /// decision. Refused = silent no-op (quiet=true for per-frame UI visibility checks).</summary>
         internal static bool GateSp(string op, bool menuContinue = false, bool quiet = false)
         {
             bool ok = menuContinue ? ContinueAllowed() : SpHost();
@@ -252,7 +217,6 @@ namespace NOSaveSystem
             return ok;
         }
 
-        /// <summary>v0.10.2: one-line release fingerprint at plugin load.</summary>
         private void LogFingerprint()
         {
             string sha = "?", cfg, kind = "?", path = "?";
@@ -385,18 +349,15 @@ namespace NOSaveSystem
             try { Directory.CreateDirectory(_saveDir.Value); }
             catch (Exception ex) { Log.LogWarning("Could not create save directory: " + ex.Message); }
 
-            // v0.10.1 (M5): post-load reassert state never survives a scene change.
             try
             {
-                // v0.10.2f (E5): the editor warning is re-armed on every scene load
                 try { _mainSceneHandle = UnityEngine.SceneManagement.SceneManager.GetActiveScene().handle; } catch { }
                 UnityEngine.SceneManagement.SceneManager.sceneLoaded += (s, m) =>
                 {
                     _editorWarned = false; _markerAt = -100f;
-                    // v0.11.0 build 3 (G1): a new mission (single scene load) never inherits PAUSE0 state
                     if (m == UnityEngine.SceneManagement.LoadSceneMode.Single)
                     {
-                        _prevSceneHandle = _mainSceneHandle; _mainSceneHandle = s.handle; _mainSceneName = s.name; // v0.11.1 (L5/G3)
+                        _prevSceneHandle = _mainSceneHandle; _mainSceneHandle = s.handle; _mainSceneName = s.name;
                         if (_mpLatched) { _mpLatched = false; Log?.LogInfo("GATE MP latch cleared (scene load '" + s.name + "')"); }
                         try { NoSavePause0.ResetState("sceneLoaded"); } catch { }
                     }
@@ -404,8 +365,6 @@ namespace NOSaveSystem
                 UnityEngine.SceneManagement.SceneManager.sceneUnloaded += _ =>
                 {
                     try { NoSaveV093.LoadPauseArmed = false; NoSaveV096.ClearAmmoReassert(); NoSavePilotFix.ClearPending(); } catch { }
-                    // v0.11.1 (L5/G3): reset PAUSE0 only when no mission is running or the unloaded scene IS the mission
-                    // (single-loaded) scene; additive / loading scenes unloading mid-mission are ignored.
                     try
                     {
                         bool running = false; try { running = GameManager.gameState != GameState.Menu; } catch { }
@@ -414,15 +373,13 @@ namespace NOSaveSystem
                         else Log?.LogInfo("PAUSE0 reset ignored sceneUnloaded '" + _.name + "' (additive/loading scene; mission scene '" + (_mainSceneName ?? "?") + "' still loaded)");
                     }
                     catch { }
-                    // v0.10.2d (B11): engine holds are NOT cleared on any scene unload (MissionReload starts a new generation
-                    // instead); only destroyed components/aircraft are pruned here.
                     try { NoSaveEngineGear.Prune(); } catch { }
                 };
             }
             catch (Exception ex) { Log.LogWarning("sceneUnloaded hook: " + ex.Message); }
 
             _harmony = new Harmony(PLUGIN_GUID);
-            PatchEachClass(); // v0.11.1 (L1): one failed patch class never stops the others
+            PatchEachClass();
             try { gameObject.AddComponent<NoSaveV0100Behaviour>(); }
             catch (Exception v100Ex) { Log.LogWarning("v0100: behaviour: " + v100Ex.Message); }
             try { gameObject.AddComponent<NoSaveUiBehaviour>(); }
@@ -434,7 +391,6 @@ namespace NOSaveSystem
         private static int _mainSceneHandle = -1, _prevSceneHandle = -1;
         private static string _mainSceneName;
 
-        /// <summary>v0.11.1 (L1): Harmony patch classes are applied one by one, each in its own try/catch.</summary>
         private void PatchEachClass()
         {
             int ok = 0, fail = 0, methods = 0;
@@ -458,12 +414,11 @@ namespace NOSaveSystem
             else Log.LogWarning("patch summary ok=" + ok + " fail=" + fail + " methods=" + methods + " (features of the failed classes are inactive)");
         }
 
-        // v0.11.0 PAUSE0: counts simulation ticks (FixedUpdate runs only while timeScale > 0)
-        private void FixedUpdate() { NoSavePause0.OnFixedUpdate(); } // v0.11.0 build 2: also guards PAUSE0
+        private void FixedUpdate() { NoSavePause0.OnFixedUpdate(); }
 
         private void Update()
         {
-            GatePoll(); // v0.11.1: MP detection (1/s)
+            GatePoll();
             if (Input.GetKeyDown(_saveKey.Value))
             {
                 if (!GateSp("F5 save hotkey")) return;
@@ -496,7 +451,6 @@ namespace NOSaveSystem
             {
                 try
                 {
-                    // v0.9.1: never clear while a reload/core is demonstrably still running.
                     if (_opBusy && Time.unscaledTime - _busySince > BusyStaleSec && !MissionReload.IsRunning && !_coreRunning)
                     {
                         Log.LogWarning("NOSave busy flag STALE (>" + BusyStaleSec + "s) - clearing");
@@ -508,7 +462,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>Begin long-running busy (Continue coroutine). Returns false if already busy/cooling down.</summary>
         internal bool TryBeginLongBusy(string op)
         {
             if (IsBusyOrCoolingDown)
@@ -554,8 +507,6 @@ namespace NOSaveSystem
             try { _busyCooldownUntil = Time.unscaledTime + 1f; } catch { _busyCooldownUntil = 0f; }
         }
 
-        // ---------- F5: structured snapshot ----------
-
         internal void CaptureMidMissionSnapshot()
         {
             if (!GateSp("Save")) return;
@@ -564,20 +515,17 @@ namespace NOSaveSystem
             finally { ExitBusy(); }
         }
 
-        /// <summary>v0.10.0: true if a save may be started now (SP host, not busy). Used by the save menu.</summary>
         internal bool CanStartOp => GateSp("op", false, true) && !IsBusyOrCoolingDown && !MissionReload.IsRunning && !_coreRunning && !NoSaveReconcile.LoadInProgress;
 
-        /// <summary>Core save body. Prefer CaptureMidMissionSnapshot() which applies busy lock.</summary>
         internal void CaptureMidMissionSnapshotCore()
         {
             Directory.CreateDirectory(_saveDir.Value);
             var path = Path.Combine(_saveDir.Value, SaveFileName);
 
-            // v0.9.0: never overwrite the autosave from the menu / an empty or loading mission.
             bool running = false; int acN0 = 0;
             try { running = MissionManager.IsRunning; } catch { }
             try { if (UnitRegistry.allAircraft != null) acN0 = UnitRegistry.allAircraft.Count; } catch { }
-            if (!running || NoSaveReconcile.LoadInProgress) // v0.9.10: aircraft=0 (dead/spectating) is allowed
+            if (!running || NoSaveReconcile.LoadInProgress)
             {
                 Log.LogWarning("F5 refused: mission running=" + running + " aircraft=" + acN0 + " loadInProgress=" + NoSaveReconcile.LoadInProgress + " (existing save kept)");
                 if (HudFeedbackEnabled) MidMissionV03Helpers.ShowGameFeedback("NOSave F5 refused (no running mission)");
@@ -587,10 +535,8 @@ namespace NOSaveSystem
             var snap = BuildSnapshot();
             var json = SnapshotJson.Serialize(snap);
             WriteAtomic(path, json);
-            SaveCounter++;            // v0.10.1 (L5)
-            LastLoadedPath = null;    // v0.10.1 (M2): F6 now means "the save just written"
-            // v0.10.0: one stamp for both archive copies (json + .deep) so the save menu pairs them reliably.
-            // v0.10.1 (L5): millisecond stamp so two saves within one second do not overwrite each other's archive copy.
+            SaveCounter++;
+            LastLoadedPath = null;
             var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
             try { Directory.CreateDirectory(Path.Combine(_saveDir.Value, "archive")); } catch { }
             PendingArchiveStamp = stamp;
@@ -635,12 +581,10 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>v0.9.0: write to .tmp then swap in, so a crash mid-write cannot corrupt the only autosave.</summary>
         internal static void WriteAtomic(string path, string text)
         {
             string tmp = path + ".tmp";
             string bak = path + ".bak";
-            // v0.9.1: remove a stale .tmp from a previous crashed write; flush to disk before swapping in.
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             var bytes = new UTF8Encoding(false).GetBytes(text);
             using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -652,7 +596,6 @@ namespace NOSaveSystem
             {
                 try { File.Replace(tmp, path, bak); return; }
                 catch (Exception ex) { Log?.LogInfo("File.Replace unavailable (" + ex.Message + ") - copy fallback"); }
-                // v0.9.1: fallback keeps a .bak too (old code overwrote the only good copy with no backup).
                 try { File.Copy(path, bak, true); } catch (Exception bex) { Log?.LogWarning("autosave .bak copy failed: " + bex.Message); }
                 File.Copy(tmp, path, true);
                 try { File.Delete(tmp); } catch { }
@@ -714,7 +657,7 @@ namespace NOSaveSystem
                 {
                     if (unit == null) continue;
                     if (seen.Contains(unit.GetInstanceID())) continue;
-                    if (unit is Aircraft) continue; // already captured
+                    if (unit is Aircraft) continue;
 
                     if (unit is GroundVehicle gv)
                     {
@@ -728,14 +671,12 @@ namespace NOSaveSystem
                     }
                     else
                     {
-                        // Buildings/scenery/pilots/missiles: capture as generic SavedUnit-shaped DTO
                         snap.otherUnits.Add(CaptureUnitBase(unit, unit.GetType().Name));
                         seen.Add(unit.GetInstanceID());
                     }
                 }
             }
 
-            // v0.9.0 full-state property bag (after unit capture so blank UniqueNames are already assigned).
             try { snap.playerState = NoSaveV0910.CapturePlayerState(playerAc); } catch { }
             try { snap.destroyedStatics = NoSaveV0910.CaptureDestroyedStatics(); } catch (Exception ex) { Log.LogWarning("destroyed statics capture FAIL: " + ex.Message); }
             try { snap.datalink = NoSaveV093.CaptureDatalink(); }
@@ -810,11 +751,10 @@ namespace NOSaveSystem
         internal static SavedAircraftDto CaptureAircraft(Aircraft ac, bool isPlayer)
         {
             var dto = new SavedAircraftDto();
-            // Player flags before FillUnitFields so EnsureSpawnUniqueName prefers pid / nosave_player_*.
             dto.kind = "aircraft";
             dto.playerControlled = isPlayer;
             dto.isPlayerAircraft = isPlayer;
-            FillUnitFields(ac, dto); // pose + rb + parts + UniqueName
+            FillUnitFields(ac, dto);
             try { dto.fuel = ac.GetFuelLevel(); dto.fuelCaptured = true; } catch { try { dto.fuel = ac.fuelLevel; dto.fuelCaptured = true; } catch { } }
             try { dto.skill = ac.skill; } catch { }
             try { dto.bravery = ac.bravery; } catch { }
@@ -827,7 +767,6 @@ namespace NOSaveSystem
             {
                 try { dto.startingSpeed = ac.speed; } catch { }
             }
-            // Fallback: Aircraft.startingVelocity when RB path missed
             if (!dto.velocityCaptured)
             {
                 try
@@ -857,7 +796,6 @@ namespace NOSaveSystem
             dto.kind = "vehicle";
             dto.holdPosition = false;
             try { dto.skill = gv.skill; } catch { dto.skill = 0.5f; }
-            // holdPosition is private on GroundVehicle - spawn DTO defaults false; live AI may re-decide.
             return dto;
         }
 
@@ -883,7 +821,7 @@ namespace NOSaveSystem
 
         private static void FillUnitFields(Unit unit, SavedUnitDto dto)
         {
-            try { dto.v096 = NoSaveV096.CaptureExtra(unit); } catch { } // v0.9.8: all kinds (incl. vehicles/ships) get weapon ammo
+            try { dto.v096 = NoSaveV096.CaptureExtra(unit); } catch { }
             try
             {
                 var def = unit.definition;
@@ -901,11 +839,8 @@ namespace NOSaveSystem
             catch { }
 
             try { dto.unitName = unit.unitName; } catch { }
-            // persistentId MUST be filled before EnsureSpawnUniqueName so blank names become nosave_pid_<id>.
             try { dto.persistentId = unit.persistentID.Id; } catch { }
             try { dto.private_uniqueName = unit.UniqueName; } catch { }
-            // v0.8.1: never leave empty UniqueName in JSON (player craft often has blank UniqueName).
-            // Assign stable id onto DTO and persist onto live unit via NetworkUniqueName + RegisterCustomID.
             if (string.IsNullOrEmpty(dto.private_uniqueName))
             {
                 try
@@ -951,7 +886,6 @@ namespace NOSaveSystem
                 catch { }
             }
 
-            // Exact rigidbody kinematics for ALL unit types (aircraft/vehicle/ship/other).
             CaptureUnitVelocity(unit, dto);
             dto.parts = MidMissionV03Helpers.CapturePartHealth(unit);
         }
@@ -974,14 +908,11 @@ namespace NOSaveSystem
             catch { }
         }
 
-        // ---------- F6: restore ----------
-
         private static bool _teleportWarned;
         private bool IsSwapRestoreMode()
         {
             try
             {
-                // v0.10.0: legacy Teleport restore mode removed (compliance audit). Always Swap.
                 string m = _restoreMode != null ? _restoreMode.Value : "Swap";
                 if (!string.IsNullOrEmpty(m) && string.Equals(m.Trim(), "Teleport", StringComparison.OrdinalIgnoreCase) && !_teleportWarned)
                 {
@@ -995,7 +926,6 @@ namespace NOSaveSystem
 
         internal void RestoreMidMissionSnapshot() { TryStartRestore(); }
 
-        /// <returns>true if the restore coroutine was started.</returns>
         internal bool TryStartRestore()
         {
             if (!GateSp("Load")) return false;
@@ -1006,7 +936,6 @@ namespace NOSaveSystem
             return true;
         }
 
-        /// <summary>v0.10.0: save-menu Load of a specific file through the normal F6 flow (MissionReload / Swap).</summary>
         internal bool RestoreFromFile(string path) { return RestoreFromFile(path, true); }
 
         internal bool RestoreFromFile(string path, bool remember)
@@ -1018,7 +947,6 @@ namespace NOSaveSystem
             finally { if (!started) LoadPathOverride = null; }
             if (started && remember)
             {
-                // v0.10.1 (M2): F6 reloads the save picked in the menu; the autosave itself needs no override.
                 LastLoadedPath = string.Equals(path, AutosavePath, StringComparison.OrdinalIgnoreCase) ? null : path;
             }
             return started;
@@ -1054,28 +982,23 @@ namespace NOSaveSystem
                     }
                     if (MissionReload.LastPreflightFail)
                     {
-                        // v0.10.1 (H1): the save was rejected before anything was torn down - the running mission is untouched.
                         Log.LogWarning("MissionReload preflight rejected the save (" + (MissionReload.LastFailReason ?? "-") + ") - nothing changed, no Swap fallback");
                         yield break;
                     }
                     if (MissionReload.LastFailReason == "purge_unverified")
                     {
-                        // v0.10.1 (H2): spawning on top of surviving mobiles is what produced ghost duplicates.
                         Log.LogError("MissionReload: mobile purge not verified - NOT spawning (no Swap fallback)");
                         NoSaveUi.SetStatus("NOSave: restore aborted - old units did not despawn (see log)", 8f);
                         yield break;
                     }
                     if (MissionReload.LastFailReason == "core_failed")
                     {
-                        // v0.9.1: the snapshot core already ran inside MissionReload (purge+spawn). A second Swap pass
-                        // would purge/respawn everything again on top of a partial restore; report instead.
                         Log.LogError("MissionReload: snapshot core failed/aborted inside reload - NOT running Swap fallback (see last_restore_plan.txt)");
                         NoSaveUi.SetStatus("NOSave: restore aborted (see last_restore_plan.txt)", 8f);
                         yield break;
                     }
                     if (!MissionReload.LastMissionRunning)
                     {
-                        // v0.8.9: Swap fallback into a menu/half-torn-down scene would spawn units with nothing to own them.
                         Log.LogError("MissionReload FAILED and no mission running (fail=" + (MissionReload.LastFailReason ?? "-") + ") - Swap fallback skipped");
                         NoSaveUi.SetStatus("NOSave: MissionReload failed - start the mission, then Load", 8f);
                         yield break;
@@ -1095,17 +1018,12 @@ namespace NOSaveSystem
             {
                 NoSaveReconcile.ReleaseLoad(loadToken);
                 ExitBusy();
-                LoadPathOverride = null; // v0.10.0
+                LoadPathOverride = null;
             }
         }
 
-        /// <summary>
-        /// Sync wrapper for rare callers; prefers coroutine path (Swap needs settle frames).
-        /// Continue should <c>yield return RestoreMidMissionSnapshotCoreCo()</c>.
-        /// </summary>
         internal void RestoreMidMissionSnapshotCore()
         {
-            // Fire-and-forget caller (old Continue path). v0.8.9: take the load lock so F6 cannot overlap.
             if (_coreRunning || MissionReload.IsRunning)
             {
                 Log.LogWarning("RestoreMidMissionSnapshotCore refused: restore already running");
@@ -1122,16 +1040,10 @@ namespace NOSaveSystem
             finally { NoSaveReconcile.ReleaseLoad(token); }
         }
 
-        /// <summary>True while the core apply (purge + spawn) coroutine runs. Prevents two cores interleaving.</summary>
         private static bool _coreRunning;
         internal static bool CoreRunning { get { return _coreRunning; } }
-        /// <summary>v0.9.1: true only when the last core body ran to completion (not aborted / thrown / refused).</summary>
         internal static bool LastCoreOk { get; private set; }
 
-        /// <summary>
-        /// Core restore body. Swap: despawn-all -> 2-frame settle -> spawn-all (Destroy is deferred).
-        /// Used by F6/UI (busy wrapper) and Continue (yield return; long-busy already held).
-        /// </summary>
         internal IEnumerator RestoreMidMissionSnapshotCoreCo()
         {
             if (_coreRunning)
@@ -1146,7 +1058,6 @@ namespace NOSaveSystem
             finally { _coreRunning = false; _pidIndex = null; }
         }
 
-        /// <summary>v0.9.0: persistentId -> live unit index valid for one restore pass (avoids O(units x dtos) scans).</summary>
         private static Dictionary<uint, Unit> _pidIndex;
 
         private static void BuildPidIndex()
@@ -1166,7 +1077,7 @@ namespace NOSaveSystem
         private IEnumerator RestoreMidMissionSnapshotCoreCoBody()
         {
             LastCoreOk = false;
-            var path = ResolveLoadPath(); // v0.10.0: save-menu slot or autosave
+            var path = ResolveLoadPath();
             if (!File.Exists(path))
             {
                 Log.LogWarning("No save file at " + path + " - press F5 in a mission first.");
@@ -1189,7 +1100,6 @@ namespace NOSaveSystem
 
             Spawner spawner = null;
             try { spawner = Spawner.i; } catch { }
-            // Swap always needs spawn capability on host; AllowRespawnMissing effectively always on for Swap.
             bool canSpawn = spawner != null && spawner.IsServer && (swapMode || _allowRespawnMissing.Value);
             if (swapMode && (spawner == null || !spawner.IsServer))
                 plan.AppendLine("  WARN Swap needs Spawner.IsServer; host/offline only. canSpawn=" + canSpawn);
@@ -1203,10 +1113,7 @@ namespace NOSaveSystem
             var localPlayer = MidMissionV03Helpers.FindLocalPlayer();
             Aircraft playerCraftAfter = null;
 
-            // --- SWAP pass 1: despawn ALL mobiles, then settle so Destroy/Unregister finish ---
-            // v0.7.1 despawned+spawned same frame; Destroy is deferred -> old GO still visible/HUD
-            // while new UniqueName registered -> stacked duplicates / overlapping HUD numbers.
-            var pass1Despawned = new List<KeyValuePair<Unit, string>>(); // v0.10.1 (H2)
+            var pass1Despawned = new List<KeyValuePair<Unit, string>>();
             if (swapMode)
             {
                 plan.AppendLine("  SWAP pass1 DESPAWN all mobiles before settle");
@@ -1280,8 +1187,6 @@ namespace NOSaveSystem
                 plan.AppendLine("  SETTLE 2 frames after pass1 (Destroy deferred; DisableUnit+SetActive already applied)");
                 yield return null;
                 yield return null;
-                // v0.10.1 (H2): verify every pass1 despawn before anything is spawned; survivors are force-destroyed
-                // (ghost duplicates such as COIN_2 came from old objects still alive when the new one spawned).
                 int stillAlive = 0;
                 foreach (var kv in pass1Despawned)
                 {
@@ -1292,7 +1197,7 @@ namespace NOSaveSystem
                 yield return null;
             }
 
-            BuildPidIndex(); // after purge: only survivors (player craft) are indexed
+            BuildPidIndex();
 
             if (snap.aircraft != null)
             {
@@ -1306,7 +1211,7 @@ namespace NOSaveSystem
 
                 foreach (var dto in aircraftOrder)
                 {
-                    if (dto == null) continue; // v0.9.1: comparer tolerated nulls but the loop dereferenced them
+                    if (dto == null) continue;
                     bool isPlayerDto = dto.isPlayerAircraft || dto.playerControlled;
                     var live = FindLiveAircraft(dto);
 
@@ -1356,7 +1261,6 @@ namespace NOSaveSystem
                             plan.AppendLine("  SWAP SPAWN FAIL aircraft " + DtoLabel(dto));
                         }
                     }
-                    // v0.10.2d: the legacy Teleport branch was removed here (dead code: IsSwapRestoreMode() always returns true since v0.10.0)
                 }
             }
 
@@ -1513,8 +1417,6 @@ namespace NOSaveSystem
                 }
             }
 
-            // otherUnits: Swap skips statics (Building/Scenery/Factory/depot/pillbox/gabion).
-            // Only swap mobile others (Pilot/Missile) when safe. Teleport mode also skips statics (never TP buildings).
             if (snap.otherUnits != null)
             {
                 foreach (var dto in snap.otherUnits)
@@ -1571,7 +1473,6 @@ namespace NOSaveSystem
                     }
                     else
                     {
-                        // Teleport mode: still never TP statics
                         if (isStatic)
                         {
                             skippedStatic++;
@@ -1611,7 +1512,6 @@ namespace NOSaveSystem
                 }
             }
 
-            // Rebind player to swapped/spawned craft (SetAircraft + AttachToAircraft)
             if (localPlayer != null && playerCraftAfter != null)
             {
                 if (MidMissionV03Helpers.RebindPlayerToAircraft(localPlayer, playerCraftAfter, plan))
@@ -1620,10 +1520,9 @@ namespace NOSaveSystem
                     failed++;
             }
 
-            // v0.9.0: full-state extension (after units exist and the player is rebound).
             if (_restoreFullState != null && _restoreFullState.Value)
             {
-                yield return null; // let spawned weapons/components initialize before ammo writes
+                yield return null;
                 try
                 {
                     NoSaveExtState.Restore(snap, plan, _restoreAllObjectiveStatus != null && _restoreAllObjectiveStatus.Value);
@@ -1640,7 +1539,6 @@ namespace NOSaveSystem
                 try { MidMissionV03Helpers.TryApplyObjectiveStatuses(snap.activeObjectives, plan); } catch (Exception ex) { plan.AppendLine("  OBJECTIVES status-apply outer FAIL: " + ex.Message); }
             }
 
-            // v0.9.11: re-register respawned UniqueNames + resolve DestroyUnit objectives (Carrier Duel win/loss)
             try { NoSaveV0911.FixObjectiveRegistrations(snap, plan); } catch (Exception ex) { plan.AppendLine("  V0911 FAIL: " + ex.Message); }
 
             Log.LogInfo(string.Format(
@@ -1662,7 +1560,6 @@ namespace NOSaveSystem
                     failed));
             }
 
-            // v0.9.1: a plan-file IO error (file open in an editor, etc.) must not turn a finished restore into a failure.
             try
             {
                 var planPath = Path.Combine(_saveDir.Value, "last_restore_plan.txt");
@@ -1670,19 +1567,15 @@ namespace NOSaveSystem
             }
             catch (Exception ex) { Log.LogWarning("last_restore_plan.txt write failed: " + ex.Message); }
             LastCoreOk = true;
-            // v0.11.0: post-load VERIFY (MissionReload arms it itself after its post-core passes)
             if (!MissionReload.IsRunning) { try { NoSaveVerify.Arm(snap, "Swap"); } catch (Exception vex) { Log.LogWarning("NOSAVE-VERIFY arm FAIL " + vex.Message); } }
         }
 
-        /// <summary>
-        /// Fuel/ignition/gear/HP/controls/loadout after spawn or teleport.
-        /// </summary>
         private void ApplyAircraftStateFields(Aircraft ac, SavedAircraftDto dto, StringBuilder plan)
         {
             if (ac == null || dto == null) return;
             try
             {
-                if (dto.fuel > 0f || dto.fuelCaptured) // v0.9.0: an empty tank is restored as empty
+                if (dto.fuel > 0f || dto.fuelCaptured)
                 {
                     ac.fuelLevel = dto.fuel;
                     ac.NetworkfuelLevel = dto.fuel;
@@ -1695,17 +1588,14 @@ namespace NOSaveSystem
                 ac.NetworkIgnition = dto.ignition;
             }
             catch { }
-            // v0.9.5: instant gear (no Extending/Retracting animation)
             try { NoSaveEngineGear.ApplyGear(ac, dto, null); }
             catch { try { ac.NetworkgearDeployed = dto.gearDeployed; } catch { } }
             if (_restorePartHealth.Value && dto.parts != null && dto.parts.Count > 0)
                 MidMissionV03Helpers.RestorePartHealthExact(ac, dto.parts, plan);
-            // v0.10.2d: engines after part health, so a damaged engine is seen as damaged before anything is forced
             try { NoSaveEngineGear.ApplyEngines(ac, dto, null, "spawn"); } catch { }
             if (_restoreAircraftControls.Value)
             {
                 MidMissionV03Helpers.RestoreAircraftControls(ac, dto, plan);
-                // v0.9.2: pilot state machine overwrites inputs each frame; fix up after Pilot init.
                 try
                 {
                     if (Instance != null)
@@ -1722,15 +1612,9 @@ namespace NOSaveSystem
                 MidMissionV03Helpers.ApplyLiveLoadout(ac, dto.loadoutMountKeys, plan);
         }
 
-        /// <summary>
-        /// Post-spawn: apply exact pose/vel (collider grace) + aircraft fields.
-        /// Used after Swap spawn and after missing-unit spawn - not a live-unit teleport restore.
-        /// </summary>
         private bool ApplyAircraftStateAfterRestore(Aircraft ac, SavedAircraftDto dto, StringBuilder plan, ref int teleported)
         {
             if (ac == null) return false;
-            // SpawnSavedUnit already placed pose from DTO - skip full TryTeleport (avoids double move).
-            // Still apply exact RB vel/ang + fuel/HP/controls/loadout.
             bool ok = ApplyVelocityOnlyAfterSpawn(ac, dto, dto.startingSpeed, dto, plan);
             if (ok)
             {
@@ -1741,7 +1625,6 @@ namespace NOSaveSystem
             return ok;
         }
 
-        /// <summary>Post-spawn: apply saved RB velocity/angular only (pose already set by Spawner).</summary>
         private static bool ApplyVelocityOnlyAfterSpawn(Unit unit, SavedUnitDto dto, float speedHint, SavedAircraftDto acDto, StringBuilder plan)
         {
             if (unit == null || dto == null) return false;
@@ -1808,7 +1691,6 @@ namespace NOSaveSystem
                     return ac;
             }
 
-            // Player aircraft fallback: single player-controlled entry
             if (dto.isPlayerAircraft || dto.playerControlled)
             {
                 var localAc = MidMissionV03Helpers.FindLocalPlayerAircraft();
@@ -1844,11 +1726,6 @@ namespace NOSaveSystem
             return null;
         }
 
-        /// <summary>
-        /// v0.9.1: post-spawn lookup. FindLiveUnit consults _pidIndex, which was built BEFORE spawning and never
-        /// contains freshly spawned units (and a spawned unit gets a new persistentID anyway), so a name-registry
-        /// miss silently skipped velocity/part-HP/ship-control restore. Match by (spawn-assigned) UniqueName only.
-        /// </summary>
         private static Unit FindSpawnedUnit(SavedUnitDto dto)
         {
             if (dto == null || string.IsNullOrEmpty(dto.private_uniqueName)) return null;
@@ -1872,12 +1749,6 @@ namespace NOSaveSystem
             return TryTeleportUnit(unit, dto, speedHint, null);
         }
 
-        /// <summary>
-        /// Literal kinematic restore for ANY unit. Exact saved globalPosition, rotation,
-        /// Rigidbody.velocity, angularVelocity - no altitude nudge, no attitude flatten.
-        /// Velocity is restored for vehicles/ships/other too; only zero if that was the saved value.
-        /// Brief collider grace does not alter pos/rot; exact vel is re-applied after colliders return.
-        /// </summary>
         private static bool TryTeleportUnit(Unit unit, SavedUnitDto dto, float speedHint, SavedAircraftDto acDto)
         {
             if (unit == null || dto.globalPosition == null || dto.rotation == null) return false;
@@ -1897,7 +1768,6 @@ namespace NOSaveSystem
                 bool isAircraft = unit is Aircraft || acDto != null;
                 ResolveUnitVelocity(dto, acDto ?? (dto as SavedAircraftDto), rot, speedHint, out desiredVel, out desiredAng, out velSource);
 
-                // Brief collider-off grace for aircraft (vehicles/ships: too many colliders per F6).
                 if (isAircraft)
                 {
                     colliders = unit.GetComponentsInChildren<Collider>();
@@ -1914,7 +1784,6 @@ namespace NOSaveSystem
                     deferColliderRestore = true;
                 }
 
-                // EXACT saved pose - no Y boost, no heading rewrite.
                 unit.transform.SetPositionAndRotation(local, rot);
                 try { unit.NetworkstartPosition = gp; } catch { }
                 try { unit.NetworkstartRotation = rot; } catch { }
@@ -1931,7 +1800,6 @@ namespace NOSaveSystem
 
                     try { rb.isKinematic = wasKinematic; } catch { }
 
-                    // ALWAYS assign exact saved velocity after teleport for ALL unit types.
                     rb.velocity = desiredVel;
                     rb.angularVelocity = desiredAng;
                 }
@@ -1950,7 +1818,6 @@ namespace NOSaveSystem
 
                 try { Physics.SyncTransforms(); } catch { }
 
-                // Re-assert exact velocity after SyncTransforms (no pos change).
                 if (rb != null)
                 {
                     try
@@ -1979,7 +1846,6 @@ namespace NOSaveSystem
                 {
                     if (deferColliderRestore && Instance != null)
                     {
-                        // Brief invulnerability: keep colliders off ~2s; re-apply exact vel when restored.
                         Instance.StartCoroutine(NoSaveCoroutines.Safe(NoSaveVerify.Track(RestoreCollidersAfterDelay(colliders, prevCol, 2.0f, unit, desiredVel, desiredAng)), "Colliders"));
                         Log.LogInfo("invuln colliders deferred 2.0s for " + DtoLabel(dto));
                     }
@@ -1997,14 +1863,13 @@ namespace NOSaveSystem
 
         private static IEnumerator RestoreCollidersAfterDelay(Collider[] colliders, bool[] prevCol, float seconds, Unit unit, Vector3 desiredVel, Vector3 desiredAng)
         {
-            if (seconds > 0f) yield return new WaitForSecondsRealtime(seconds); // v0.9.1: MissionReload pauses (timeScale 0)
+            if (seconds > 0f) yield return new WaitForSecondsRealtime(seconds);
             if (colliders == null || prevCol == null) yield break;
             for (int i = 0; i < colliders.Length && i < prevCol.Length; i++)
             {
                 if (colliders[i] == null) continue;
                 try { colliders[i].enabled = prevCol[i]; } catch { }
             }
-            // Re-apply exact saved kinematics after colliders return (grace must not alter state).
             if (unit != null)
             {
                 try
@@ -2030,10 +1895,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>
-        /// Resolve exact velocity for any unit DTO. Prefer saved rb velocity when velocityCaptured;
-        /// aircraft may fall back to startingSpeed*forward; otherwise explicit zero (including saved zero).
-        /// </summary>
         private static void ResolveUnitVelocity(SavedUnitDto dto, SavedAircraftDto acDto, Quaternion rot, float speedHint,
             out Vector3 desiredVel, out Vector3 desiredAng, out string velSource)
         {
@@ -2071,7 +1932,6 @@ namespace NOSaveSystem
             }
         }
 
-        // Back-compat name used nowhere critical; keep ResolveAircraftVelocity as thin wrapper.
         private static void ResolveAircraftVelocity(SavedAircraftDto acDto, Quaternion rot, float speedHint,
             out Vector3 desiredVel, out Vector3 desiredAng, out string velSource)
         {
@@ -2100,7 +1960,7 @@ namespace NOSaveSystem
                 };
                 GroundVehicle spawned;
                 if (!(spawner.TrySpawnVehicle(saved, out spawned) && spawned != null)) return false;
-                NoSaveV0911.RegisterRespawned(saved, spawned); // v0.9.11: TrySpawnVehicle skips AfterSpawn/RegisterCustomID
+                NoSaveV0911.RegisterRespawned(saved, spawned);
                 return true;
             }
             catch (Exception ex)
@@ -2128,7 +1988,7 @@ namespace NOSaveSystem
                 };
                 Ship spawned;
                 if (!(spawner.TrySpawnShip(saved, out spawned) && spawned != null)) return false;
-                NoSaveV0911.RegisterRespawned(saved, spawned); // v0.9.11: TrySpawnShip skips AfterSpawn/RegisterCustomID
+                NoSaveV0911.RegisterRespawned(saved, spawned);
                 return true;
             }
             catch (Exception ex)
@@ -2149,8 +2009,6 @@ namespace NOSaveSystem
             if (q == null) return Quaternion.identity;
             return new Quaternion(q.x, q.y, q.z, q.w);
         }
-
-        // ---------- legacy reflect dump (optional) ----------
 
         private void WriteLegacyReflectDump()
         {
@@ -2177,8 +2035,6 @@ namespace NOSaveSystem
         public const string PLUGIN_VERSION = NOSaveSystemPlugin.PLUGIN_VERSION;
     }
 
-    // ----- DTOs mirroring SavedMission field names -----
-
     [Serializable]
     public class MidMissionSnapshot
     {
@@ -2190,16 +2046,11 @@ namespace NOSaveSystem
         public List<SavedUnitDto> otherUnits;
         public List<FactionEconomyDto> factions;
         public List<ObjectiveDto> activeObjectives;
-        /// <summary>v0.9.0: 1 = pre-0.9 (no extState), 2 = extState property bag.</summary>
         public int formatVersion;
         public List<StateEntryDto> extState;
-        /// <summary>v0.9.3: FactionHQ.trackingDatabase (datalink) by UniqueName.</summary>
         public List<DatalinkDto> datalink;
-        /// <summary>v0.9.10: "aircraft|Faction" or "noAircraft|Faction".</summary>
         public string playerState;
-        /// <summary>v0.9.10: '|'-joined UniqueNames of destroyed map statics.</summary>
         public string destroyedStatics;
-        /// <summary>v0.10.0 save-menu metadata, written as trailing "nosaveMeta" object (absent in older saves).</summary>
         public string metaSavedLocal, metaSavedUtc, metaMission, metaAircraft, metaAircraftType;
     }
 
@@ -2265,12 +2116,10 @@ namespace NOSaveSystem
         public uint persistentId;
         public bool disabled;
         public string unitState;
-        // Exact kinematics + part HP for ALL unit kinds (aircraft/vehicle/ship/other)
         public GlobalPosDto velocity;
         public GlobalPosDto angularVelocity;
         public bool velocityCaptured;
         public List<PartHpDto> parts;
-        /// <summary>v0.9.6: extra runtime state "k=v;k=v" (missile guidance/motor, aircraft targets). Empty on older saves.</summary>
         public string v096;
     }
 
@@ -2292,20 +2141,18 @@ namespace NOSaveSystem
         public float brake;
         public bool controlsCaptured;
         public List<float> engineRpmRatios;
-        // v0.9.2 pilot / throttle state
         public float customAxis1;
-        public string pilotState;      // Pilot.currentState type name (AIPilotTakeoffState, AIPilotTaxiState, ...)
-        public string pilotStateName;  // stateDisplayName ("taking off", "taxiing to runway", ...)
-        public bool hasTakenOff;       // Pilot.flightInfo.HasTakenOff
-        public float simThrottle;      // PilotPlayerState.simulatedThrottle (player only)
+        public string pilotState;
+        public string pilotStateName;
+        public bool hasTakenOff;
+        public float simThrottle;
         public bool pilotCaptured;
         public bool simThrottleCaptured;
-        // v0.9.5 engine spool + gear state
-        public string engineState;   // "Type|f=v;f=v#Type|..." per engine component (hierarchy order)
-        public int gearState = -1;   // LandingGear.GearState at save (-1 = unknown/pre-0.9.5)
-        public string animState;     // v0.10.2: "G,i,hingeAngle,door;F,i,flapPitch" mid-transition gear/flap progress
-        public float savedThrust = -1f; // v0.10.2: sum IThrustSource.GetThrust() at save (-1 = old save)
-        public float savedPower = -1f;  // v0.10.2: sum IPowerSource.GetPower() at save (-1 = old save)
+        public string engineState;
+        public int gearState = -1;
+        public string animState;
+        public float savedThrust = -1f;
+        public float savedPower = -1f;
     }
 
     [Serializable]
@@ -2325,10 +2172,6 @@ namespace NOSaveSystem
         public bool controlsCaptured;
     }
 
-    /// <summary>
-    /// Manual JSON writer/reader. Unity JsonUtility does not serialize List&lt;T&gt; at root well
-    /// and drops inheritance; we keep a SavedMission-shaped schema explicitly.
-    /// </summary>
     internal static class SnapshotJson
     {
         public static string Serialize(MidMissionSnapshot snap)
@@ -2376,7 +2219,6 @@ namespace NOSaveSystem
             sb.AppendLine();
             sb.Append("  \"nosavePlayerState\": \"").Append(E(snap.playerState ?? "")).AppendLine("\",");
             sb.Append("  \"nosaveDestroyedStatics\": \"").Append(E(snap.destroyedStatics ?? "")).Append("\"");
-            // v0.10.0: metadata LAST so first-match key lookups (name/type/mission/aircraft) never hit it.
             sb.AppendLine(",");
             sb.Append("  \"nosaveMeta\": {\"savedLocal\":\"").Append(E(snap.metaSavedLocal ?? ""))
               .Append("\",\"savedUtc\":\"").Append(E(snap.metaSavedUtc ?? ""))
@@ -2391,8 +2233,6 @@ namespace NOSaveSystem
 
         public static MidMissionSnapshot Deserialize(string json)
         {
-            // Minimal tolerant parser via Unity JsonUtility on wrapper chunks is painful;
-            // use a simple hand parser for our known schema.
             var snap = new MidMissionSnapshot
             {
                 aircraft = new List<SavedAircraftDto>(),
@@ -2405,7 +2245,6 @@ namespace NOSaveSystem
                 manifest = new SnapshotManifest()
             };
 
-            // Extract aircraft / vehicles / ships arrays as object blobs
             foreach (var obj in ExtractObjectArray(json, "aircraft"))
             {
                 var dto = new SavedAircraftDto();
@@ -2413,7 +2252,6 @@ namespace NOSaveSystem
                 dto.playerControlled = GetBool(obj, "playerControlled");
                 dto.isPlayerAircraft = GetBool(obj, "isPlayerAircraft");
                 dto.fuel = GetFloat(obj, "fuel");
-                // pre-0.9 saves have no fuelCaptured: a written "fuel" key with >0 still counts; 0 keeps old "use 1.0" behaviour
                 dto.fuelCaptured = HasKey(obj, "fuelCaptured") ? GetBool(obj, "fuelCaptured") : false;
                 dto.skill = GetFloat(obj, "skill");
                 dto.bravery = GetFloat(obj, "bravery");
@@ -2424,7 +2262,7 @@ namespace NOSaveSystem
                 dto.velocityCaptured = GetBool(obj, "velocityCaptured");
                 dto.velocity = GetVec3(obj, "velocity");
                 if (dto.velocity != null && !dto.velocityCaptured)
-                    dto.velocityCaptured = true; // pre-0.4.1 / partial writes
+                    dto.velocityCaptured = true;
                 dto.angularVelocity = GetVec3(obj, "angularVelocity");
                 dto.loadoutMountKeys = GetStringArray(obj, "loadoutMountKeys");
                 dto.throttle = GetFloat(obj, "throttle");
@@ -2476,7 +2314,7 @@ namespace NOSaveSystem
             try { snap.destroyedStatics = GetString(json, "nosaveDestroyedStatics"); } catch { }
             try
             {
-                var metaObj = ExtractObject(json, "nosaveMeta"); // v0.10.0, optional
+                var metaObj = ExtractObject(json, "nosaveMeta");
                 if (metaObj != null)
                 {
                     snap.metaSavedLocal = GetString(metaObj, "savedLocal");
@@ -2552,7 +2390,6 @@ namespace NOSaveSystem
                 snap.manifest.utc = GetString(manifestObj, "utc");
             }
 
-            // v0.9.0: formatVersion absent => 1 (pre-0.9 save, no extState). Unknown newer keys are ignored.
             snap.formatVersion = HasKey(json, "formatVersion") ? (int)GetFloat(json, "formatVersion") : 1;
             snap.extState = new List<StateEntryDto>();
             if (snap.formatVersion >= 2)
@@ -2652,7 +2489,6 @@ namespace NOSaveSystem
                     sb.Append(",\"ignition\":").Append(a.ignition ? "true" : "false");
                     sb.Append(",\"gearDeployed\":").Append(a.gearDeployed ? "true" : "false");
                     sb.Append(",\"radarAlt\":").Append(F(a.radarAlt));
-                    // velocity/angular/parts already written by AppendUnitFields
                     sb.Append(",\"loadoutMountKeys\":");
                     AppendStringArray(sb, a.loadoutMountKeys);
                     sb.Append(",\"throttle\":").Append(F(a.throttle));
@@ -2735,7 +2571,6 @@ namespace NOSaveSystem
             sb.Append("]");
         }
 
-        
         private static void AppendFactions(StringBuilder sb, List<FactionEconomyDto> list)
         {
             sb.Append("[");
@@ -2796,10 +2631,6 @@ namespace NOSaveSystem
             sb.Append("]");
         }
 
-        /// <summary>
-        /// Parse a flat {"k":"v",...} object token-by-token (unlike GetString, a value that happens to equal a
-        /// key name cannot be mistaken for that key). Non-string values are kept as raw text.
-        /// </summary>
         private static Dictionary<string, string> ParseFlatObject(string obj)
         {
             var d = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -2841,7 +2672,6 @@ namespace NOSaveSystem
             return d;
         }
 
-        /// <summary>uint persistentId without float rounding (float only has 24 bits of mantissa).</summary>
         private static uint GetUInt(string obj, string key)
         {
             var marker = "\"" + key + "\"";
@@ -2879,7 +2709,6 @@ namespace NOSaveSystem
             }
             sb.Append("]");
         }
-
 
         private static void AppendUnitFields(StringBuilder sb, SavedUnitDto u)
         {
@@ -2921,8 +2750,6 @@ namespace NOSaveSystem
         private static string E(string s)
         {
             if (s == null) return "";
-            // v0.9.1: single pass, and other control chars (< 0x20) are dropped instead of written raw (invalid JSON;
-            // our reader has no \u decoder, so they cannot be escaped round-trip).
             StringBuilder sb = null;
             for (int i = 0; i < s.Length; i++)
             {
@@ -3037,7 +2864,7 @@ namespace NOSaveSystem
             idx++;
             while (idx < obj.Length && char.IsWhiteSpace(obj[idx])) idx++;
             if (idx >= obj.Length) return null;
-            if (obj[idx] == 'n') return null; // null
+            if (obj[idx] == 'n') return null;
             if (obj[idx] != '"') return null;
             idx++;
             var sb = new StringBuilder();
@@ -3086,7 +2913,6 @@ namespace NOSaveSystem
             }
             return list;
         }
-        /// <summary>Read a {"x":..,"y":..,"z":..} object; returns null if missing or JSON null (does not scan past null into later braces).</summary>
         private static GlobalPosDto GetVec3(string obj, string key)
         {
             var marker = "\"" + key + "\"";
@@ -3097,7 +2923,7 @@ namespace NOSaveSystem
             idx++;
             while (idx < obj.Length && char.IsWhiteSpace(obj[idx])) idx++;
             if (idx >= obj.Length) return null;
-            if (obj[idx] == 'n') return null; // null
+            if (obj[idx] == 'n') return null;
             if (obj[idx] != '{') return null;
             int start = idx;
             int depth = 0;
@@ -3192,7 +3018,6 @@ namespace NOSaveSystem
                     i++;
                 if (i == start)
                 {
-                    // v0.9.1: non-numeric token (null / hand-edited file) used to spin forever here (game hang on load).
                     while (i < obj.Length && obj[i] != ',' && obj[i] != ']') i++;
                     continue;
                 }
@@ -3233,8 +3058,4 @@ namespace NOSaveSystem
         }
     }
 }
-
-
-
-
 

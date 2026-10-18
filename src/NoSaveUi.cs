@@ -12,12 +12,6 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// Main-menu Continue-after-reboot flow (reload mission by loadKey, then auto-F6), used by the main-menu
-    /// SAVE MENU, F8 and AutoContinue. v0.11.0 (RM OLDUI): the legacy IMGUI pause / main-menu panels are gone;
-    /// the only NOSave UI is the native SAVE MENU (pause menu + main menu, NoSaveV0100).
-    /// Harmony postfix on NetworkPause.Awake marks the pause overlay for detection.
-    /// </summary>
     internal static class NoSaveUi
     {
         
@@ -26,8 +20,6 @@ namespace NOSaveSystem
         private static bool _autoContinueFired;
         private static float _menuEnterRealtime = -1f;
 
-        /// <summary>v0.10.2: everything NOSave draws is plain ASCII (dashes/quotes/ellipsis mapped, accents stripped,
-        /// anything else -> '?'), so neither the IMGUI default font nor a TMP font can render mojibake.</summary>
         internal static string Ascii(string s)
         {
             if (string.IsNullOrEmpty(s)) return s ?? "";
@@ -56,7 +48,6 @@ namespace NOSaveSystem
 
         internal static void SetStatus(string msg, float seconds = 4f)
         {
-            // v0.11.0 (RM OLDUI): no IMGUI status box any more; HUD feedback (game's own) + log only.
             msg = Ascii(msg);
             try { MidMissionV03Helpers.ShowGameFeedback(msg); } catch { }
             NOSaveSystemPlugin.Log?.LogInfo("[UI] " + msg);
@@ -80,7 +71,6 @@ namespace NOSaveSystem
 
             try
             {
-                // SP often zeros timescale while paused
                 if (Time.timeScale < 0.01f && GameManager.gameState == GameState.SinglePlayer)
                     return true;
             }
@@ -94,7 +84,6 @@ namespace NOSaveSystem
             catch { return false; }
         }
 
-        // v0.9.1: cached save metadata (AutoContinue polls it every frame on the main menu).
         private static string _metaPath, _metaName;
         private static DateTime _metaStamp;
         private static bool _metaOk;
@@ -139,7 +128,6 @@ namespace NOSaveSystem
                 if (!File.Exists(path)) return false;
                 stamp = File.GetLastWriteTime(path);
                 var json = File.ReadAllText(path, Encoding.UTF8);
-                // lightweight parse
                 missionName = ExtractJsonString(json, "name");
                 if (string.IsNullOrEmpty(missionName))
                     missionName = ExtractJsonString(json, "loadKeyName");
@@ -174,8 +162,6 @@ namespace NOSaveSystem
 
         internal static bool ContinueInProgress => _continueInProgress;
 
-        /// <summary>v0.11.0: main-menu SAVE MENU load of a specific save (path) or the autosave (null) through the
-        /// Continue flow (offline SP host -> mission load + loading screen -> MissionReload restore -> PAUSE0).</summary>
         internal static IEnumerator ContinueFromFileCo(string path)
         {
             if (!string.IsNullOrEmpty(path)) NOSaveSystemPlugin.LoadPathOverride = path;
@@ -208,7 +194,7 @@ namespace NOSaveSystem
             try
             {
                 var plug = NOSaveSystemPlugin.Instance;
-                savePath = plug.ResolveLoadPath(); // v0.10.0 (override is null here -> autosave)
+                savePath = plug.ResolveLoadPath();
                 if (!File.Exists(savePath))
                 {
                     SetStatus("NOSave Continue: no midmission_autosave.json");
@@ -241,7 +227,6 @@ namespace NOSaveSystem
                 yield break;
             }
 
-            // v0.8.2: MissionReload is Continue north star. On fail: Swap if mission running; legacy host if still Menu; else abort (no double-host).
             var plugInst = NOSaveSystemPlugin.Instance;
             bool continueViaLegacyHost = false;
             if (plugInst != null && plugInst.IsMissionReloadLoadMode())
@@ -267,13 +252,11 @@ namespace NOSaveSystem
 
                     if (fail == "core_failed" || MissionReload.LastRefusedReentrant)
                     {
-                        // v0.9.1: core already ran (or another reload is active) - no second purge/respawn pass.
                         NOSaveSystemPlugin.Log?.LogError("Continue: MissionReload " + fail + " - NOT running Swap fallback (see last_restore_plan.txt)");
                         SetStatus("NOSave Continue: restore aborted (" + fail + ") - see last_restore_plan.txt", 10f);
                     }
                     else if (running || MissionReload.LastMissionRunning)
                     {
-                        // Host is up (or partial) - safe in-place Swap like F6 fallback. Do NOT StartHost again.
                         NOSaveSystemPlugin.Log?.LogWarning("Continue: MR fail with mission running -> Swap-core fallback");
                         SetStatus("NOSave Continue: MissionReload failed (" + fail + ") -> Swap fallback...", 10f);
                         MidMissionV03Helpers.ShowGameFeedback("NOSave Continue: Swap fallback");
@@ -282,14 +265,12 @@ namespace NOSaveSystem
                     }
                     else if (atMenu && !hostStarted)
                     {
-                        // Never hosted - safe to use legacy Continue host+Swap path.
                         NOSaveSystemPlugin.Log?.LogWarning("Continue: MR fail at menu (no host) -> legacy Continue host+Swap");
                         SetStatus("NOSave Continue: MissionReload failed (" + fail + ") -> legacy host...", 10f);
                         continueViaLegacyHost = true;
                     }
                     else
                     {
-                        // Ambiguous half-state - do not double-host.
                         NOSaveSystemPlugin.Log?.LogWarning("Continue: MR fail ambiguous state - NOT auto-hosting. Retry Continue or F6 Swap in-mission.");
                         SetStatus("NOSave Continue: MissionReload failed () - retry Continue, or start mission + F6 Swap.", 12f);
                         MidMissionV03Helpers.ShowGameFeedback("NOSave Continue: MissionReload failed - retry");
@@ -303,7 +284,6 @@ namespace NOSaveSystem
 
             if (continueViaLegacyHost)
             {
-                // Legacy Continue: TryLoad -> SetMission -> StartHost -> wait -> Swap apply
                 Mission mission = null;
                 string lastErr = null;
                 try
@@ -376,7 +356,6 @@ namespace NOSaveSystem
                     yield break;
                 }
 
-                // v0.9.0/0.9.1: await the core under the single load lock (F6 cannot overlap).
                 SetStatus("NOSave Continue: applying snapshot (Swap)...", 6f);
                 int loadToken = NoSaveReconcile.TryAcquireLoad("Continue");
                 if (loadToken == 0) { SetStatus("NOSave busy (load in progress)"); yield break; }
@@ -384,7 +363,7 @@ namespace NOSaveSystem
                 finally { NoSaveReconcile.ReleaseLoad(loadToken); }
                 SetStatus(NOSaveSystemPlugin.LastCoreOk ? "NOSave Continue: done." : "NOSave Continue: restore aborted (see last_restore_plan.txt)", 5f);
             }
-            } // end try (long busy)
+            }
             finally
             {
                 _continueInProgress = false;
@@ -403,7 +382,6 @@ namespace NOSaveSystem
             Mission mission = null;
             string err = null;
 
-            // Prefer hinted group type name (ResourceGroup / UserGroup / WorkshopGroup / ...)
             var groups = new System.Collections.Generic.List<MissionGroup>();
             try
             {
@@ -426,7 +404,6 @@ namespace NOSaveSystem
             }
             catch { }
 
-            // Fallbacks in likely order for stock missions like Escalation
             void Add(MissionGroup g) { if (g != null && !groups.Contains(g)) groups.Add(g); }
             try
             {
@@ -458,7 +435,6 @@ namespace NOSaveSystem
                 }
             }
 
-            // Last resort: MissionKey.TryLoad via reflection-free All groups enumeration
             try
             {
                 if (MissionGroup.AllGroups != null)
@@ -485,7 +461,6 @@ namespace NOSaveSystem
             return null;
         }
 
-        
         internal static void AutoContinueTick()
         {
             try
@@ -500,7 +475,7 @@ namespace NOSaveSystem
                 if (_menuEnterRealtime < 0f) _menuEnterRealtime = Time.realtimeSinceStartup;
                 if (Time.realtimeSinceStartup - _menuEnterRealtime < sec) return;
                 if (plug.IsBusyOrCoolingDown) return;
-                if (!NOSaveSystemPlugin.GateSp("AutoContinue", true)) return; // v0.10.2
+                if (!NOSaveSystemPlugin.GateSp("AutoContinue", true)) return;
                 _autoContinueFired = true;
                 NOSaveSystemPlugin.Log?.LogInfo("AutoContinue: firing Continue after " + sec + "s on menu");
                 plug.StartCoroutine(ContinueAfterRebootCoroutine());
@@ -515,13 +490,9 @@ namespace NOSaveSystem
         {
             if (overlay == null) return;
             _pauseOverlay = overlay;
-            // overlay remembered
         }
     }
 
-    /// <summary>
-    /// v0.11.0 (RM OLDUI): the legacy IMGUI pause/main-menu panels were removed; this only drives AutoContinue.
-    /// </summary>
     internal class NoSaveUiBehaviour : MonoBehaviour
     {
         private void Update()

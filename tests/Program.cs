@@ -5,7 +5,6 @@ using NOSaveSystem;
 
 namespace NOSaveSystem.Tests
 {
-    /// <summary>Synthetic tests for NOSaveSystem.ThrottleMath (linked from the plugin source). Exit code 1 on any FAIL.</summary>
     internal static class Program
     {
         private static int _pass, _fail, _skip;
@@ -34,7 +33,6 @@ namespace NOSaveSystem.Tests
             return _fail == 0 ? 0 : 1;
         }
 
-        // 1. HoldOutput(Hold|Probe) == saved for any live in [-1,1]; Blend/Released delegate correctly.
         private static void HoldOutputIsSaved()
         {
             int bad = 0, deleg = 0;
@@ -49,7 +47,6 @@ namespace NOSaveSystem.Tests
             Check("U1 HoldOutput(Blend)==Blend, (Released)==live", deleg == 0, deleg + " mismatches");
         }
 
-        // 2. MapAccToThrottle(ThrottleToAcc(t)) == t (1e-5), every mode.
         private static void RoundTrip()
         {
             foreach (var m in Modes)
@@ -66,7 +63,6 @@ namespace NOSaveSystem.Tests
             yield return (0.8f, 0.1f); yield return (0.4f, 1f); yield return (0.5f, 0.49f);
         }
 
-        // 3. endpoints exact, monotone, bounded per-frame step at 60 / 144 fps.
         private static void BlendShape()
         {
             int endBad = 0;
@@ -90,13 +86,11 @@ namespace NOSaveSystem.Tests
                     }
                 }
                 Check("U3 Blend monotone in t @" + fps + "fps", monoBad == 0, monoBad + " reversals");
-                // SmoothStep has peak slope 1.5, so the tight bound is 1.5 * |l-s| * dt / 0.75.
                 Check("U3 max step <= 1.5*|l-s|*dt/0.75 @" + fps + "fps", peak <= 1.5f + 2e-3f,
                     "peak = " + F(peak) + " x |l-s|*dt/0.75 (linear bound k=1 " + (peak <= 1f + 1e-3f ? "met" : "exceeded, as expected for SmoothStep") + ")");
             }
         }
 
-        // 4. Blend never below min(saved, live).
         private static void BlendFloor()
         {
             int bad = 0;
@@ -104,7 +98,6 @@ namespace NOSaveSystem.Tests
             Check("U4 Blend >= min(saved, live)", bad == 0, bad + " below");
         }
 
-        // 5. IsThrottleLower(l,s,slack) iff l < s - slack.
         private static void ThrottleLower()
         {
             int bad = 0;
@@ -114,7 +107,6 @@ namespace NOSaveSystem.Tests
             Check("U5 IsThrottleLower iff live < saved - slack", bad == 0 && edge, bad + " mismatches, edges " + (edge ? "ok" : "bad"));
         }
 
-        // 6. keyboard ramp: |dacc| <= dt per frame, clamped; seeded first frame == saved.
         private static void KeyboardRamp()
         {
             foreach (int fps in Fps)
@@ -141,7 +133,6 @@ namespace NOSaveSystem.Tests
                 }
         }
 
-        // SeedAcc -> MapAccToThrottle == saved within 0.005, all modes, captured / not captured / inconsistent.
         private static void Seed()
         {
             foreach (var m in Modes)
@@ -206,11 +197,10 @@ namespace NOSaveSystem.Tests
             Check("U10 SrcClassifier idle -> axis(idle)/kb(idle)", d == "axis(idle)" && e == "kb(idle)" && f == "kb(idle)", d + " / " + e + " / " + f);
         }
 
-        // ---------------------------------------------------------------- scenarios
         private sealed class Sc
         {
             public string Name; public float Saved; public bool Neg, Inv, Relative;
-            public Func<float, float> Raw;   // raw Rewired "Throttle" value at time t (s); keys = -1/0/+1
+            public Func<float, float> Raw;
             public Func<float, bool> AxisMod = _ => false;
         }
 

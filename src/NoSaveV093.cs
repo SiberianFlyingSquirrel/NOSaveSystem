@@ -16,18 +16,13 @@ namespace NOSaveSystem
         public string faction;
         public string uniqueName;
         public float x, y, z;
-        public int attackers, missileAttacks; // v0.9.6 TrackingInfo counters
+        public int attackers, missileAttacks;
     }
 
-    /// <summary>
-    /// v0.9.3: datalink (FactionHQ.trackingDatabase) save/restore, suppress Join(faction select)+map popup
-    /// during/after MissionReload, ensure saved player faction, pause (GameplayUI.PauseGame = ESC menu) after load.
-    /// </summary>
     internal static class NoSaveV093
     {
         private static void Log(string m) { NOSaveSystemPlugin.Log?.LogInfo("v093: " + m); }
 
-        // ---------------- Datalink ----------------
         internal static List<DatalinkDto> CaptureDatalink()
         {
             var list = new List<DatalinkDto>();
@@ -69,7 +64,7 @@ namespace NOSaveSystem
             float[] waits = { 0.5f, 1.5f, 3f };
             foreach (var w in waits)
             {
-                float t = 0f; while (t < w) { t += NoSaveWait.Dt(); yield return null; } // v0.11.0: pause-aware
+                float t = 0f; while (t < w) { t += NoSaveWait.Dt(); yield return null; }
                 var still = new List<DatalinkDto>();
                 RestoreDatalinkPass(snap, null, missing, still, "retry+" + w + "s");
                 missing = still;
@@ -94,7 +89,6 @@ namespace NOSaveSystem
             {
                 try { if (hq != null && hq.faction != null && hq.faction.factionName != null) hqs[hq.faction.factionName] = hq; } catch { }
             }
-            // v0.9.5: respawned vehicles are not always in customIDLookup -> scan live units by UniqueName.
             var byName = new Dictionary<string, Unit>(StringComparer.Ordinal);
             try
             {
@@ -123,7 +117,6 @@ namespace NOSaveSystem
                 if (unit == null && byName != null) byName.TryGetValue(d.uniqueName, out unit);
                 if (unit == null && savedPos != null && savedPos.TryGetValue(d.uniqueName, out var sp))
                 {
-                    // fallback: respawned unit under another name -> nearest live unit within 15 m of its saved position
                     float best = 15f * 15f;
                     foreach (var u in byName.Values)
                     {
@@ -143,8 +136,6 @@ namespace NOSaveSystem
                 {
                     var id = unit.persistentID;
                     bool had = hq.trackingDatabase != null && hq.trackingDatabase.ContainsKey(id);
-                    // Game-native: same ClientRpc the server uses when a unit is spotted (adds TrackingInfo,
-                    // hooks onDisableUnit, strategic targets, map icon). Host invokes locally + replicates.
                     hq.RpcUpdateTrackingInfo(id);
                     if (hq.trackingDatabase != null && hq.trackingDatabase.TryGetValue(id, out var ti) && ti != null)
                     {
@@ -162,14 +153,13 @@ namespace NOSaveSystem
             Log("datalink restore " + msg);
         }
 
-        // ---------------- Faction ----------------
         internal static void EnsurePlayerFaction(MidMissionSnapshot snap, StringBuilder plan)
         {
             if (snap?.aircraft == null) return;
             string fac = null;
             foreach (var a in snap.aircraft)
                 if (a != null && (a.isPlayerAircraft || a.playerControlled) && !string.IsNullOrEmpty(a.faction)) { fac = a.faction; break; }
-            if (fac == null) fac = NoSaveV0910.SavedFaction(snap); // v0.9.10: no-aircraft save
+            if (fac == null) fac = NoSaveV0910.SavedFaction(snap);
             if (fac == null) { plan?.AppendLine("  FACTION no saved player faction - leave"); Log("faction: none saved"); return; }
             Player lp = null;
             try { lp = MidMissionV03Helpers.FindLocalPlayer(); } catch { }
@@ -192,18 +182,15 @@ namespace NOSaveSystem
             try { SceneSingleton<DynamicMap>.i?.SetFaction(target); } catch (Exception ex) { Log("faction: DynamicMap.SetFaction FAIL " + ex.Message); }
         }
 
-        // ---------------- Join menu / map suppression ----------------
-        private static float _suppressUntil = -1f; // unscaled time
+        private static float _suppressUntil = -1f;
         internal static bool Suppressing { get { return Time.unscaledTime < _suppressUntil; } }
 
         internal static void BeginSuppressJoinUi() { _suppressUntil = float.MaxValue; Log("suppress Join UI (faction select) during reload: ON (map no longer suppressed)"); }
 
         internal static void EndSuppressJoinUiSoon(bool ok)
         {
-            // keep a short tail so Player.WaitShowJoinMenu (1s delay) cannot fire after we finish
             if (NoSaveV0910.NoAircraftLoad)
             {
-                // v0.9.10: spectator/dead save -> leave the native join/respawn flow alone and open it.
                 _suppressUntil = -1f;
                 Log("suppress Join UI: OFF (save had no player aircraft)");
                 if (ok) NoSaveV0910.OpenJoinMenuSoon(); else NoSaveV0910.NoAircraftLoad = false;
@@ -221,7 +208,7 @@ namespace NOSaveSystem
                 var lm = SceneSingleton<LeaderboardMenu>.i;
                 if (lm != null && lm.gameObject.activeSelf && !GameplayUI.GameIsPaused)
                 {
-                    lm.Close(); // Join mode -> GameplayUI.CloseJoinMenu (native)
+                    lm.Close();
                     Log("closed Join menu (" + why + ")");
                 }
             }
@@ -237,8 +224,6 @@ namespace NOSaveSystem
             catch (Exception ex) { Log("map minimize FAIL " + ex.Message); }
         }
 
-        // ---------------- Pause after load ----------------
-        /// <summary>v0.10.1 (M5): true only after PauseAfterLoad actually paused the game; the first ResumeGame consumes it.</summary>
         internal static bool LoadPauseArmed;
 
         internal static void SchedulePauseAfterLoad(StringBuilder plan)
@@ -246,11 +231,10 @@ namespace NOSaveSystem
             if (!NOSaveSystemPlugin.PauseAfterLoad) { plan?.AppendLine("  PAUSE after load disabled by config"); return; }
             if (NOSaveSystemPlugin.Instance == null) return;
             plan?.AppendLine("  PAUSE after load scheduled (after PilotFix settle)");
-            PausePending = true; // v0.11.0: VERIFY waits for this pause + the player's resume
+            PausePending = true;
             NOSaveSystemPlugin.Instance.StartCoroutine(NoSaveCoroutines.Safe(PauseCoTracked(), "PauseAfterLoad"));
         }
 
-        /// <summary>v0.11.0: true from scheduling until PauseCo finished (paused or gave up).</summary>
         internal static bool PausePending;
 
         private static IEnumerator PauseCoTracked()
@@ -261,7 +245,6 @@ namespace NOSaveSystem
 
         private static IEnumerator PauseCo()
         {
-            // Let post-restore coroutines (PilotFix waits for Pilot init, max ~5s) run with time ticking.
             float delay = NOSaveSystemPlugin.PauseAfterLoadDelay;
             Log("pause: delay=" + delay + "s realtime (next frame minimum)");
             yield return null;
@@ -273,8 +256,8 @@ namespace NOSaveSystem
                 var ui = SceneSingleton<GameplayUI>.i;
                 if (ui == null) { Log("pause: GameplayUI null"); yield break; }
                 if (GameplayUI.GameIsPaused) { Log("pause: already paused"); yield break; }
-                ui.PauseGame(); // == ESC: LeaderboardMenu(Leaderboard) -> SP TimeScale 0 + audio pause
-                LoadPauseArmed = GameplayUI.GameIsPaused; // v0.10.1 (M5)
+                ui.PauseGame();
+                LoadPauseArmed = GameplayUI.GameIsPaused;
                 Log("pause: GameplayUI.PauseGame() called; paused=" + GameplayUI.GameIsPaused + " reassertArmed=" + LoadPauseArmed);
             }
             catch (Exception ex) { Log("pause FAIL " + ex.Message); }
@@ -286,7 +269,6 @@ namespace NOSaveSystem
     {
         static void Postfix()
         {
-            // v0.10.1 (M5): reassert only on the first resume after the post-load pause; any other resume just clears it.
             bool armed = NoSaveV093.LoadPauseArmed;
             NoSaveV093.LoadPauseArmed = false;
             try { NoSavePause0.OnResume(); } catch { }

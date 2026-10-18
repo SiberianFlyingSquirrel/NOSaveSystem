@@ -8,32 +8,14 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.8.9: load re-entrancy guard + VERIFIED purge of live mobile units before snapshot spawn.
-    ///
-    /// Why: DespawnUnitForSwap removes the UniqueName from customIDLookup and calls UnregisterUnit
-    /// BEFORE the GameObject is gone, so registry-based "settle" checks (WaitSavedUniqueNamesCleared)
-    /// report 0 remaining even when the old GameObject is still alive in the scene. And
-    /// ServerObjectManager.Destroy(go, false) only unspawns the network identity (the debug-GUI unload
-    /// it copies is followed by a scene unload that actually destroys the objects).
-    /// Here we hold the GameObject references we despawned and wait until Unity reports them destroyed
-    /// (fake-null), plus scan the scene with Object.FindObjectsOfType&lt;Unit&gt;() which still sees
-    /// units that were unregistered from UnitRegistry.
-    ///
-    /// Only game APIs already used elsewhere in this mod are referenced:
-    /// UnitRegistry.allAircraft/allUnits/customIDLookup, Unit.UniqueName/persistentID/disabled/DisableUnit,
-    /// Player.Aircraft, MidMissionV03Helpers.DespawnUnitForSwap/IsStaticUnitKind/IsSwapSafeMobileOther.
-    /// </summary>
     internal static class NoSaveReconcile
     {
-        // ---------------- re-entrancy guard ----------------
 
         private static bool _loadInProgress;
         private static string _loadOwner;
         private static float _loadStartedAt;
         private static int _loadToken;
-        /// <summary>A held lock older than this is treated as stale (coroutine killed without finally).</summary>
-        private const float StaleLockSec = 600f; // v0.9.1: > worst-case MissionReload (~310s); 300s could be stolen mid-reload
+        private const float StaleLockSec = 600f;
 
         internal static bool LoadInProgress
         {
@@ -51,10 +33,6 @@ namespace NOSaveSystem
             return (Now() - _loadStartedAt) > StaleLockSec;
         }
 
-        /// <summary>
-        /// Single in-progress flag for ANY load path (F6 hotkey, pause-menu Load, Continue, MissionReload, Swap core).
-        /// Returns 0 when refused, else a token to pass to ReleaseLoad.
-        /// </summary>
         internal static int TryAcquireLoad(string owner)
         {
             if (_loadInProgress)
@@ -92,12 +70,6 @@ namespace NOSaveSystem
             _loadOwner = null;
         }
 
-        // ---------------- classification ----------------
-
-        /// <summary>
-        /// Mobile units that the snapshot can recreate: aircraft, ground vehicles, ships, and the
-        /// swap-safe "other" kinds (PilotDismounted / Missile). Statics (Building/Scenery/...) are never touched.
-        /// </summary>
         internal static bool IsPurgeCandidate(Unit u)
         {
             if (u == null) return false;
@@ -113,10 +85,9 @@ namespace NOSaveSystem
             return keepAircraft != null && u is Aircraft && ReferenceEquals(u, keepAircraft);
         }
 
-        /// <summary>Unity-alive (not destroyed) and not yet marked by us.</summary>
         private static bool IsAlive(UnityEngine.Object o)
         {
-            return o != null; // Unity overloaded == : false once Destroy has completed
+            return o != null;
         }
 
         internal struct MobileCounts
@@ -132,16 +103,10 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>
-        /// Collect every live purge-candidate unit: UnitRegistry lists + scene scan (FindObjectsOfType)
-        /// so units already unregistered but not yet destroyed are still counted.
-        /// </summary>
-        // v0.9.0: reused buffers (main-thread only) - no per-call HashSet/List churn during the purge wait loop.
         private static readonly HashSet<int> _seenBuf = new HashSet<int>();
         private static readonly HashSet<int> _registryBuf = new HashSet<int>();
         private static readonly List<Unit> _candBuf = new List<Unit>(512);
         private static readonly SortedDictionary<string, int> _otherTypesBuf = new SortedDictionary<string, int>(StringComparer.Ordinal);
-        /// <summary>Scene scans (FindObjectsOfType) are throttled to this interval while waiting.</summary>
         internal const float ScanIntervalSec = 0.1f;
 
         internal static List<Unit> CollectLiveMobiles(Aircraft keepAircraft, out MobileCounts counts)
@@ -195,7 +160,6 @@ namespace NOSaveSystem
                 if (IsKept(u, keepAircraft)) continue;
                 if (!IsPurgeCandidate(u))
                 {
-                    // Log non-static, non-purged types so a PC run tells us what "people" are in this build.
                     try
                     {
                         string tn = u.GetType().Name;
@@ -215,7 +179,7 @@ namespace NOSaveSystem
                 if (registryIds.Contains(id)) counts.registryTotal++;
                 else counts.sceneOnly++;
             }
-            candidates.Clear(); // drop references so destroyed units are not kept alive by the buffer
+            candidates.Clear();
             counts.total = result.Count;
             if (otherTypes.Count > 0)
             {
@@ -230,8 +194,6 @@ namespace NOSaveSystem
             return result;
         }
 
-        // ---------------- verified purge ----------------
-
         internal sealed class PurgeResult
         {
             public bool ok;
@@ -242,10 +204,6 @@ namespace NOSaveSystem
             public MobileCounts after;
         }
 
-        /// <summary>
-        /// Hard-destroy fallback, same calls the mod's DespawnUnitForSwap fallback uses (RemoveUnitOutcome path).
-        /// Also deactivates so AI/physics stop this frame even though Destroy completes end-of-frame.
-        /// </summary>
         internal static bool ForceDestroy(Unit u, StringBuilder plan)
         {
             if (!IsAlive(u)) return true;
@@ -279,11 +237,6 @@ namespace NOSaveSystem
             return false;
         }
 
-        /// <summary>
-        /// Despawn every live mobile (except keepAircraft), then WAIT until the scene shows zero remaining
-        /// for a few consecutive frames. Retries DespawnUnitForSwap, then force-destroys. Never returns ok=true
-        /// while old mobiles still exist. Caller must not spawn when result.ok == false.
-        /// </summary>
         internal static IEnumerator PurgeMobilesVerified(string phase, Player localPlayer, Aircraft keepAircraft,
             StringBuilder plan, PurgeResult result, float timeoutSec = 8f)
         {
@@ -304,7 +257,6 @@ namespace NOSaveSystem
                 bool okOne = false;
                 try { okOne = MidMissionV03Helpers.DespawnUnitForSwap(u, localPlayer, plan); } catch (Exception ex) { plan?.AppendLine("    purge despawn EX: " + ex.Message); }
                 result.despawnCalls++;
-                // DespawnUnitForSwap may only unspawn (ServerObjectManager.Destroy(go,false)); make sure the GO dies.
                 if (IsAlive(u))
                 {
                     try { if (!u.disabled) u.DisableUnit(); } catch { }
@@ -333,8 +285,6 @@ namespace NOSaveSystem
 
                 int trackedAlive = 0;
                 for (int i = 0; i < tracked.Count; i++) if (IsAlive(tracked[i])) trackedAlive++;
-                // Throttle the expensive scene scan: every frame only once tracked objects are all gone
-                // (needed for the stable-frames check), otherwise every ScanIntervalSec or at round boundaries.
                 bool roundDue = waited - roundStart >= roundSec;
                 if (trackedAlive == 0 || roundDue || remaining == null || waited - lastScan >= ScanIntervalSec)
                 {
@@ -360,7 +310,6 @@ namespace NOSaveSystem
                 }
                 stable = 0;
 
-                // New mobiles appearing (mission default spawns arriving late) or stragglers: despawn them too.
                 foreach (var u in remaining)
                 {
                     if (trackedIds.Contains(u.GetInstanceID())) continue;
@@ -414,7 +363,6 @@ namespace NOSaveSystem
             try { return (u.UniqueName ?? u.name) + " (" + u.GetType().Name + ")"; } catch { return "?"; }
         }
 
-        /// <summary>Log-only count snapshot (used before/after spawn and after tear-down).</summary>
         internal static MobileCounts LogCounts(string tag, StringBuilder plan)
         {
             MobileCounts c;
@@ -424,7 +372,6 @@ namespace NOSaveSystem
             return c;
         }
 
-        /// <summary>Snapshot mobile totals (aircraft+vehicles+ships+swap-safe others) for post-spawn sanity check.</summary>
         internal static int ExpectedMobileCount(MidMissionSnapshot snap)
         {
             if (snap == null) return 0;

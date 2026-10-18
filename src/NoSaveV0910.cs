@@ -6,16 +6,10 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.9.10: (a) F5 while the player has no aircraft (dead / spectating / at the join screen);
-    /// (b) destroyed map statics (buildings, hangars, revetments, bunkers) saved by name and re-destroyed on load.
-    /// </summary>
     internal static class NoSaveV0910
     {
         private static void Log(string m) { NOSaveSystemPlugin.Log?.LogInfo("v0910: " + m); }
 
-        // ---------- player state ----------
-        /// <summary>True while restoring a save taken with no player aircraft.</summary>
         internal static bool NoAircraftLoad;
 
         internal static string CapturePlayerState(Aircraft playerAc)
@@ -36,7 +30,6 @@ namespace NOSaveSystem
             return string.IsNullOrEmpty(f) ? null : f;
         }
 
-        /// <summary>After a no-aircraft restore: end Join-UI suppression and open the game's native join/respawn menu.</summary>
         internal static void OpenJoinMenuSoon()
         {
             if (NOSaveSystemPlugin.Instance == null) return;
@@ -57,13 +50,11 @@ namespace NOSaveSystem
             NoAircraftLoad = false;
         }
 
-        // ---------- destroyed statics ----------
         private static readonly HashSet<string> _baseline = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> _carry = new HashSet<string>(StringComparer.Ordinal);
 
         internal static bool IsStatic(Unit u) { return u is Building; }
 
-        /// <summary>Called on MissionManager.StartMission: remember which map statics exist in this mission.</summary>
         internal static void OnMissionStart()
         {
             _baseline.Clear();
@@ -99,7 +90,7 @@ namespace NOSaveSystem
                     bool d = false;
                     try { d = u.disabled || u.unitState == Unit.UnitState.Destroyed; } catch { }
                     if (d) { dead.Add(u.UniqueName); disabledN++; }
-                    else dead.Remove(u.UniqueName); // repaired since
+                    else dead.Remove(u.UniqueName);
                 }
             }
             catch { }
@@ -115,7 +106,6 @@ namespace NOSaveSystem
             var names = new HashSet<string>(StringComparer.Ordinal);
             if (!string.IsNullOrEmpty(snap?.destroyedStatics))
                 foreach (var n in snap.destroyedStatics.Split('|')) if (!string.IsNullOrEmpty(n)) names.Add(n);
-            // older saves: statics captured in otherUnits with disabled=true
             if (snap?.otherUnits != null)
                 foreach (var d in snap.otherUnits) if (d != null && !string.IsNullOrEmpty(d.private_uniqueName) && (d.disabled || d.unitState == "Destroyed")) names.Add(d.private_uniqueName);
             if (names.Count == 0) { plan?.AppendLine("  STATICS destroyed=0"); Log("destroyed statics: none in save"); return; }
@@ -127,11 +117,11 @@ namespace NOSaveSystem
             {
                 Unit u;
                 if (!live.TryGetValue(n, out u) || u == null) { missing++; continue; }
-                if (!IsStatic(u)) continue; // mobile units are handled by the swap restore
+                if (!IsStatic(u)) continue;
                 try
                 {
                     if (u.disabled) { already++; continue; }
-                    u.Networkdisabled = true; // native: Building.UnitDisabled -> collapse / hide / destroy, airbase hangar loss
+                    u.Networkdisabled = true;
                     killed++;
                     plan?.AppendLine("    STATIC destroyed " + n);
                 }

@@ -9,27 +9,20 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>One flat property-bag entry. All values are strings + a type tag so the schema never breaks.</summary>
     [Serializable]
     public class StateEntryDto
     {
-        public string scope;   // mission | missionTime | faction | objective | objectiveAll | unit | unitAmmo | unitOwner | airbase | player
-        public string target;  // faction name / objective UniqueName / unit UniqueName / airbase id / "local"
-        public string key;     // member name (or Component#idx/member for ammo)
-        public string vtype;   // f i b s e faction
+        public string scope;
+        public string target;
+        public string key;
+        public string vtype;
         public string value;
     }
 
-    /// <summary>
-    /// v0.9.0 full-state extension. CONFIRMED APIs (already used elsewhere in the mod) are called directly;
-    /// everything else goes through NoSaveReflect candidate lookups and is logged FOUND/MISS on first use.
-    /// Restore never calls Objective.Complete()/CompleteObjective/StartObjective (Outcomes would fire).
-    /// </summary>
     internal static class NoSaveExtState
     {
         internal const int FormatVersion = 2;
 
-        // ---- candidate member names (reflection guesses; logged at runtime) ----
         static readonly string[] MissionTimeOffsetCands = { "singlePlayerStartTime", "missionStartTime", "startTime", "levelStartTime", "missionTimeOffset", "timeOffset" };
         static readonly string[] FactionExtraCands = { "Networkreserves", "reserves", "reservePoints", "NetworksupplyPoints", "supplyPoints", "victoryPoints", "NetworkvictoryPoints", "Networkwarheads", "warheads", "nuclearWarheads", "killScore", "NetworkkillScore" };
         static readonly string[] ObjectiveProgressCands = { "progress", "Networkprogress", "currentProgress", "completePercent", "count", "currentCount", "killCount", "destroyedCount", "timer", "timeRemaining", "elapsed" };
@@ -43,8 +36,6 @@ namespace NOSaveSystem
         static readonly string[] AirbaseCaptureMethodCands = { "SetHQ", "SetFaction", "ChangeHQ", "SetOwner", "Capture", "ServerCapture" };
         static readonly string[] UnitOwnerSetCands = { "NetworkHQ" };
         static readonly string[] PlayerCands = { "Networkscore", "score", "PlayerScore", "Networkfunds", "funds", "Networkallocation", "allocation", "Networkkills", "kills", "Networkrank", "rank" };
-
-        // ===================== CAPTURE =====================
 
         internal static List<StateEntryDto> Capture(MidMissionSnapshot snap)
         {
@@ -85,7 +76,6 @@ namespace NOSaveSystem
             try { return hq != null && hq.faction != null ? hq.faction.factionName : null; } catch { return null; }
         }
 
-        /// <summary>Capture every simple-typed member found among candidates (key = real member name).</summary>
         private static void CaptureMembers(List<StateEntryDto> list, string scope, string target, object obj, string[] cands)
         {
             if (obj == null) return;
@@ -106,7 +96,6 @@ namespace NOSaveSystem
         {
             var mm = MissionManager.i;
             if (mm == null) return;
-            // Confirmed read: MissionManager.i.MissionTime (also in mission.missionTime). Candidate offsets for SP restore:
             CaptureMembers(list, "missionTime", "mm", mm, MissionTimeOffsetCands);
         }
 
@@ -147,7 +136,6 @@ namespace NOSaveSystem
                     CaptureMembers(list, "objective", id, o, ObjectiveProgressCands);
                 }
             }
-            // Completed / all objectives (Status is a confirmed public field on Objective).
             foreach (var cand in RunnerAllObjectiveCands)
             {
                 var m = NoSaveReflect.FindMember(runner.GetType(), false, cand);
@@ -167,8 +155,6 @@ namespace NOSaveSystem
             }
         }
 
-        // v0.9.1: per-Type caches. CaptureAmmo/RestoreAmmo walk every MonoBehaviour of every unit; v0.9.0 did a
-        // 10-hint IndexOf scan per component plus a string.Join cache-key build in FindMember per ammo component.
         private static readonly Dictionary<Type, bool> _ammoTypeCache = new Dictionary<Type, bool>();
         private static readonly Dictionary<Type, MemberInfo> _ammoMemberCache = new Dictionary<Type, MemberInfo>();
 
@@ -197,12 +183,9 @@ namespace NOSaveSystem
             return false;
         }
 
-        // v0.11.1: sectioned capture so VERIFY can spread it over frames (2 ms budget): sections 0 missionTime,
-        // 1 faction, 2 objectives, 3 units (chunked via UnitList/CaptureUnitsRange), 4 airbases, 5 player.
         internal const int SectionCount = 6;
         internal const int UnitsSection = 3;
 
-        /// <summary>Capture one non-unit section into list (same code as Capture).</summary>
         internal static void CaptureSection(int i, List<StateEntryDto> list)
         {
             switch (i)
@@ -216,7 +199,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>The unit list CaptureUnits walks (aircraft first, then all units, no duplicates).</summary>
         internal static List<Unit> UnitList()
         {
             var units = new List<Unit>();
@@ -234,7 +216,6 @@ namespace NOSaveSystem
             CaptureUnitsRange(list, units, 0, units.Count);
         }
 
-        /// <summary>Units [start, start+count) of a UnitList() result.</summary>
         internal static void CaptureUnitsRange(List<StateEntryDto> list, List<Unit> units, int start, int count)
         {
             int end = Math.Min(units.Count, start + count);
@@ -244,10 +225,9 @@ namespace NOSaveSystem
                 if (u == null) continue;
                 string id = null;
                 try { id = u.UniqueName; } catch { }
-                if (string.IsNullOrEmpty(id)) continue; // F5 assigns nosave_pid_* to blanks before this runs
+                if (string.IsNullOrEmpty(id)) continue;
                 bool isStatic = false;
                 try { isStatic = MidMissionV03Helpers.IsStaticUnitKind(u.GetType().Name, u); } catch { }
-                // Ownership (statics included: buildings captured / factories flipped). NetworkHQ read is confirmed.
                 try
                 {
                     var hq = u.NetworkHQ;
@@ -255,7 +235,7 @@ namespace NOSaveSystem
                     if (fn != null) list.Add(new StateEntryDto { scope = "unitOwner", target = id, key = "NetworkHQ", vtype = "faction", value = fn });
                 }
                 catch { }
-                if (isStatic) continue; // no component scans on thousands of statics
+                if (isStatic) continue;
                 CaptureAmmo(list, u, id);
             }
         }
@@ -304,7 +284,6 @@ namespace NOSaveSystem
             if (m != null && NoSaveReflect.TryGet(c, m, out v) && v is string && !string.IsNullOrEmpty((string)v)
                 && !string.Equals(m.Name, "name", StringComparison.Ordinal))
                 return (string)v;
-            // Fallback: GameObject name + rounded position (stable across a MissionReload of the same map)
             var p = c.transform.position;
             return c.gameObject.name + "@" + Mathf.RoundToInt(p.x).ToString(CultureInfo.InvariantCulture) + "," + Mathf.RoundToInt(p.z).ToString(CultureInfo.InvariantCulture);
         }
@@ -339,8 +318,6 @@ namespace NOSaveSystem
             if (p == null) return;
             CaptureMembers(list, "player", "local", p, PlayerCands);
         }
-
-        // ===================== RESTORE =====================
 
         internal sealed class Counters { public int applied, unchanged, missing, failed; }
 
@@ -379,7 +356,6 @@ namespace NOSaveSystem
             catch (Exception ex) { plan?.AppendLine("  EXT-STATE " + what + " FAIL: " + ex.Message); }
         }
 
-        /// <summary>Write one entry onto obj by exact member name, converting to the declared type.</summary>
         private static void ApplyEntry(object obj, StateEntryDto e, StringBuilder plan, Counters c, string tag)
         {
             if (obj == null) { c.missing++; return; }
@@ -415,10 +391,6 @@ namespace NOSaveSystem
             foreach (var e in entries) ApplyEntry(obj, e, plan, c, tag);
         }
 
-        /// <summary>
-        /// SP mission clock: MissionTime is confirmed readable but has no setter. If a candidate start-time offset
-        /// field exists, shift it by (saved - current) and VERIFY by re-reading MissionTime; revert if it didn't help.
-        /// </summary>
         private static void RestoreMissionTime(List<StateEntryDto> entries, MidMissionSnapshot snap, StringBuilder plan, Counters c)
         {
             var mm = MissionManager.i;
@@ -446,7 +418,7 @@ namespace NOSaveSystem
                     plan?.AppendLine("  MISSIONTIME via " + m.Name + ": " + before.ToString("F1", CultureInfo.InvariantCulture) + " -> " + after.ToString("F1", CultureInfo.InvariantCulture) + " (saved " + savedT.ToString("F1", CultureInfo.InvariantCulture) + ")");
                     return;
                 }
-                NoSaveReflect.TrySet(mm, m, curObj); // revert: this field is not the clock base
+                NoSaveReflect.TrySet(mm, m, curObj);
                 plan?.AppendLine("  MISSIONTIME candidate " + m.Name + " did not move MissionTime (reverted)");
             }
             c.missing++;
@@ -492,7 +464,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>Status field write for ALL objectives found (confirmed public field). Never Complete().</summary>
         private static void RestoreObjectiveStatusAll(List<StateEntryDto> entries, StringBuilder plan, Counters c)
         {
             var idx = LiveObjectiveIndex();
@@ -523,7 +494,7 @@ namespace NOSaveSystem
                     return u as Unit;
             }
             catch { }
-            try { foreach (var x in UnitRegistry.allUnits) if (x != null && x.UniqueName == name) return x; } catch { } // v0.9.8: respawned units often not in customIDLookup
+            try { foreach (var x in UnitRegistry.allUnits) if (x != null && x.UniqueName == name) return x; } catch { }
             return null;
         }
 
@@ -544,7 +515,6 @@ namespace NOSaveSystem
 
         private static void RestoreAmmo(List<StateEntryDto> entries, StringBuilder plan, Counters c)
         {
-            // Group by unit so each unit's components are scanned once.
             var byUnit = new Dictionary<string, List<StateEntryDto>>(StringComparer.Ordinal);
             foreach (var e in entries)
             {
@@ -600,7 +570,6 @@ namespace NOSaveSystem
                     FactionHQ want = null;
                     if (!string.IsNullOrEmpty(e.value)) { try { want = FactionRegistry.HqFromName(e.value); } catch { } }
                     if (ReferenceEquals(cur, want)) { c.unchanged++; continue; }
-                    // Prefer a capture method (fires the game's own ownership change), then direct member write.
                     if (want != null && NoSaveReflect.TryInvoke1(ab, want, typeof(FactionHQ), AirbaseCaptureMethodCands))
                     {
                         c.applied++;

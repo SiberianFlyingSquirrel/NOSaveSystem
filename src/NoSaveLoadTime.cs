@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Text;
 namespace NOSaveSystem
 {
-    /// <summary>v0.9.9: per-phase load timing. One 'LOADTIME' summary line per F6 load.</summary>
     internal static class NoSaveLoadTime
     {
         private static Stopwatch _sw; private static long _last; private static StringBuilder _sb;

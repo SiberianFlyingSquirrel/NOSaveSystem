@@ -12,18 +12,11 @@ using UnityEngine.UI;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.10.0: native "SAVE MENU" button in the pause menu (LeaderboardMenu, MenuMode.Leaderboard) placed directly
-    /// under QUIT MISSION, opening a uGUI save menu (list newest first, Load / Delete(confirm) / New Save / Close).
-    /// Scene hierarchy (GameWorld level1): Canvas/MenuCanvas/Leaderboard[LeaderboardMenu]/mainOrganizer[VLG]/ButtonsPanel[VLG]
-    ///   {SPACER, ResumeButton, JoinFactionButton, OptionsButton, HideUIButton, RestartMission_Button, QuitMission_Button[QuitMissionButton]}
-    /// SP-host only (compliance gate).
-    /// </summary>
     internal static class NoSaveV0100
     {
         internal const string ButtonName = "NOSave_SaveGameButton";
         internal const string PanelName = "NOSave_SaveMenuPanel";
-        internal const string ButtonLabel = "SAVE MENU"; // v0.10.2: was "SAVE GAME"
+        internal const string ButtonLabel = "SAVE MENU";
 
         internal static void Log(string m) { NOSaveSystemPlugin.Log?.LogInfo("v0100: " + m); }
         internal static void Warn(string m) { NOSaveSystemPlugin.Log?.LogWarning("v0100: " + m); }
@@ -53,9 +46,6 @@ namespace NOSaveSystem
             Warn("button injection FAILED: " + msg);
         }
 
-        // ------------------------------------------------------------------ metadata
-
-        /// <summary>Fills v0.10.0 save metadata (timestamp, mission, player aircraft) on a fresh snapshot.</summary>
         internal static void FillMeta(MidMissionSnapshot snap)
         {
             if (snap == null) return;
@@ -79,8 +69,6 @@ namespace NOSaveSystem
             }
         }
 
-        // ------------------------------------------------------------------ injection
-
         internal static void OnMenuOpened(LeaderboardMenu menu, MenuMode mode, string src)
         {
             if (menu == null) return;
@@ -88,7 +76,6 @@ namespace NOSaveSystem
             bool sp = NOSaveSystemPlugin.GateSp("SaveMenu.inject", false, true);
             if (mode != MenuMode.Leaderboard || !sp)
             {
-                // compliance: never inject outside an SP host session; hide an existing clone.
                 try { if (_saveButton != null) _saveButton.gameObject.SetActive(false); } catch { }
                 string why = "mode=" + mode + " spHost=" + sp;
                 if (why != _lastHiddenReason) { _lastHiddenReason = why; Log("SAVE MENU button not shown (" + why + ") src=" + src); }
@@ -114,7 +101,6 @@ namespace NOSaveSystem
                 if (_saveButton != null && _menuFor == menu && _saveButton.transform.IsChildOf(menu.transform)) return true;
                 _saveButton = null; _menuFor = null;
 
-                // never duplicate: re-bind an existing clone (e.g. static state lost)
                 var existing = FindDeep(menu.transform, ButtonName);
                 if (existing != null)
                 {
@@ -151,7 +137,7 @@ namespace NOSaveSystem
                 var lg = parent.GetComponent<LayoutGroup>();
                 if (ert != null && crt != null)
                 {
-                    crt.sizeDelta = ert.sizeDelta; // same footprint as QUIT MISSION
+                    crt.sizeDelta = ert.sizeDelta;
                     if (lg == null)
                     {
                         crt.anchorMin = ert.anchorMin; crt.anchorMax = ert.anchorMax; crt.pivot = ert.pivot;
@@ -228,9 +214,6 @@ namespace NOSaveSystem
             return null;
         }
 
-        /// <summary>Instantiate inside an inactive holder (no Awake/OnEnable of game scripts), strip game-logic
-        /// MonoBehaviours (ButtonController/QuitMissionButton etc.), reset every Button.onClick (persistent calls too).</summary>
-        /// v0.11.1 (L2): returns null (half-built object destroyed, logged) when the template or clone has no Button.
         internal static GameObject CloneClean(GameObject template, Transform parent, string name)
         {
             if (template == null || template.GetComponent<Button>() == null) { Warn("CloneClean FAIL '" + (template != null ? template.name : "null") + "': template has no Button"); return null; }
@@ -313,7 +296,6 @@ namespace NOSaveSystem
             try { if (_panel != null) _panel.HandleEsc(); } catch { }
         }
 
-        // ------------------------------------------------------------------ v0.11.0: main-menu SAVE MENU button
         internal const string MainButtonName = "NOSave_MainMenuSaveButton";
         private static Button _mmButton;
         private static MainMenu _mmFor;
@@ -336,8 +318,6 @@ namespace NOSaveSystem
             try { return Traverse.Create(mm).Field("missionsButton").GetValue<Button>(); } catch { return null; }
         }
 
-        /// <summary>Visibility rule: only on a main menu that can launch an SP mission (GateSp menuContinue: main
-        /// menu, nothing hosted, not editor play) and while no NOSave load is running.</summary>
         internal static void PollMain(string src)
         {
             try
@@ -358,7 +338,7 @@ namespace NOSaveSystem
                 bool can = NOSaveSystemPlugin.GateSp("SaveMenu.main", true, true) && !NoSaveUi.ContinueInProgress && !MissionReload.IsRunning;
                 if (!can)
                 {
-                    ShowMain(false); // v0.11.1 (L3): siblings moved back while hidden
+                    ShowMain(false);
                     if (MainPanelOpen) _mmPanel.Close("main menu cannot launch SP now", true);
                     string why = "spMenu=" + NOSaveSystemPlugin.GateSp("SaveMenu.main", true, true) + " loading=" + (NoSaveUi.ContinueInProgress || MissionReload.IsRunning);
                     if (why != _mmLastHidden) { _mmLastHidden = why; Log("main-menu SAVE MENU button not shown (" + why + ") src=" + src); }
@@ -393,7 +373,7 @@ namespace NOSaveSystem
                         Warn("main-menu SAVE MENU: clone failed (see CloneNative FAIL) -> no button, retry with back-off src=" + src);
                         return false;
                     }
-                    string mode = PlaceMain(go, tpl, parent); // v0.11.1 (L3): directly under MISSIONS, no overlap
+                    string mode = PlaceMain(go, tpl, parent);
                     Log("main-menu SAVE MENU placement mode=" + mode + " parent='" + (parent != null ? parent.name : "-") + "' siblingIndex=" + go.transform.GetSiblingIndex());
                     Log("main-menu SAVE MENU look vs '" + tpl.name + "': " + LookDiff(tpl.gameObject, go));
                 }
@@ -402,7 +382,7 @@ namespace NOSaveSystem
                 var b = go.GetComponent<Button>();
                 if (b == null) { UnityEngine.Object.Destroy(go); Warn("main-menu SAVE MENU: clone has no Button -> destroyed, no button"); return false; }
                 b.onClick.RemoveListener(OnMainButtonClicked);
-                b.onClick.AddListener(OnMainButtonClicked); // keeps the re-wired native click sound listeners
+                b.onClick.AddListener(OnMainButtonClicked);
                 b.interactable = true;
                 _mmButton = b; _mmFor = mm;
                 try { if (parent is RectTransform prt) LayoutRebuilder.MarkLayoutForRebuild(prt); } catch { }
@@ -412,17 +392,6 @@ namespace NOSaveSystem
             catch (Exception ex) { Warn("main-menu SAVE MENU injection FAILED: " + ex.Message); return false; }
         }
 
-        /// <summary>
-        /// v0.11.0: clone a native main-menu button keeping its look/feel: Image/TMP/Animator/AudioSource/EventSystem
-        /// components and the game's look-only UIStyleSystem appliers stay; game-logic MonoBehaviours are removed and
-        /// onClick is reset.
-        /// v0.11.1 (L2): returns false (half-built object destroyed, logged) when the template or the clone has no Button.
-        /// v0.11.1 (L3 sound): native hover/click sounds are kept: persistent AudioSource calls of onClick and of every
-        /// EventTrigger entry are re-wired (game-target calls dropped, the trigger itself kept); game MonoBehaviours that
-        /// only hold sound/look data (AudioClip + value fields) are kept; other game scripts with AudioClip fields are
-        /// removed and their clips re-wired (hover/enter/highlight -> PointerEnter, click/press/select -> onClick) through
-        /// SoundManager.PlayMenuOneShot.
-        /// </summary>
         internal static bool CloneNative(GameObject template, Transform parent, string name, out GameObject result)
         {
             result = null;
@@ -488,7 +457,6 @@ namespace NOSaveSystem
                     b.onClick = new Button.ButtonClickedEvent();
                     foreach (var c in calls) { var cc = c; b.onClick.AddListener(() => cc()); kept.Append("clickAudio "); }
                 }
-                // clips of removed game scripts -> SoundManager.PlayMenuOneShot (reflection: no AudioModule reference)
                 if (hoverClips.Count > 0 || clickClips.Count > 0)
                 {
                     if (hoverClips.Count > 0)
@@ -516,8 +484,6 @@ namespace NOSaveSystem
         }
 
         private static readonly Dictionary<Type, bool[]> _soundOnly = new Dictionary<Type, bool[]>();
-        /// <summary>True when every instance field (whole hierarchy below MonoBehaviour) is a value type, string, enum,
-        /// AudioClip/AudioSource/AudioMixerGroup or a look asset (Sprite/Color/Material/Font) and at least one is an AudioClip.</summary>
         private static bool SoundOnly(Type t, out bool hasClip)
         {
             bool[] r;
@@ -568,8 +534,6 @@ namespace NOSaveSystem
             catch { }
         }
 
-        /// <summary>Persistent calls of a UnityEvent whose target is an AudioSource (Play/PlayOneShot/PlayDelayed),
-        /// rebuilt as actions (argument read from the serialized PersistentCall). Game-target calls are counted as dropped.</summary>
         private static List<Action> AudioCalls(UnityEventBase ev, System.Reflection.Assembly gameAsm, ref int dropped)
         {
             var res = new List<Action>();
@@ -611,7 +575,7 @@ namespace NOSaveSystem
                 var pc = calls[i];
                 int mode = Convert.ToInt32(pc.GetType().GetField("m_Mode", bf).GetValue(pc));
                 var args = pc.GetType().GetField("m_Arguments", bf).GetValue(pc);
-                switch (mode) // PersistentListenerMode: 0 EventDefined, 1 Void, 2 Object, 3 Int, 4 Float, 5 String, 6 Bool
+                switch (mode)
                 {
                     case 2: return args.GetType().GetField("m_ObjectArgument", bf).GetValue(args);
                     case 3: return args.GetType().GetField("m_IntArgument", bf).GetValue(args);
@@ -624,7 +588,6 @@ namespace NOSaveSystem
             catch { return null; }
         }
 
-        /// <summary>One-line description of the template's sound wiring (logged next to the clone result).</summary>
         private static string DescribeSound(GameObject tpl)
         {
             try
@@ -639,7 +602,6 @@ namespace NOSaveSystem
             catch { return ""; }
         }
 
-        /// <summary>v0.11.1 (L3): native look check (font, size, colors, transition) between template and clone.</summary>
         private static string LookDiff(GameObject tpl, GameObject go)
         {
             try
@@ -667,16 +629,11 @@ namespace NOSaveSystem
             catch (Exception ex) { return "n/a(" + ex.GetType().Name + ")"; }
         }
 
-        // ------------------------------------------------------------------ v0.11.1 (L3): placement without overlap
         private static readonly List<RectTransform> _mmShifted = new List<RectTransform>();
         private static float _mmShiftStep;
         private static bool _mmShiftOn;
         private static string _mmPlaceMode = "?";
 
-        /// <summary>LayoutGroup on the parent (template not ignoring layout): sibling right below the template, the
-        /// layout does the rest. Otherwise: step = distance template -> nearest native sibling below (else above, else
-        /// height*1.1); the clone takes the slot below the template and every native sibling below is moved down by
-        /// one step (moved back while the button is hidden).</summary>
         private static string PlaceMain(GameObject go, Button tpl, Transform parent)
         {
             var rt = go.transform as RectTransform; var trt = tpl.transform as RectTransform;
@@ -697,7 +654,7 @@ namespace NOSaveSystem
             {
                 var c = parent.GetChild(i) as RectTransform;
                 if (c == null || c == trt || c == rt || !c.gameObject.activeSelf || c.name.StartsWith("NOSave_", StringComparison.Ordinal)) continue;
-                if (Mathf.Abs(c.localPosition.x - tx) > w * 0.5f) continue; // not in the template's column
+                if (Mathf.Abs(c.localPosition.x - tx) > w * 0.5f) continue;
                 float y = c.localPosition.y;
                 if (y < ty - 0.5f) { col.Add(c); if (below == null || y > below.localPosition.y) below = c; }
                 else if (y > ty + 0.5f) { if (above == null || y < above.localPosition.y) above = c; }
@@ -731,7 +688,6 @@ namespace NOSaveSystem
             catch { }
         }
 
-        /// <summary>v0.11.1: GATE MP detected -> hide every NOSave button and close every NOSave panel.</summary>
         internal static void OnMpDetected()
         {
             try { if (_saveButton != null) _saveButton.gameObject.SetActive(false); } catch { }
@@ -768,8 +724,6 @@ namespace NOSaveSystem
             try { if (_mmPanel != null) _mmPanel.HandleEsc(); } catch { }
         }
 
-        // v0.10.1 (M1): GameplayUI.Update opens/closes the pause menu on the Rewired "Pause" action too (gamepad etc.),
-        // not only on Escape. Read it via reflection so no Rewired reference is needed.
         private static System.Reflection.MethodInfo _getButtonDown;
         private static bool _pauseReflectFailed;
         private static System.Reflection.FieldInfo _playerInputField;
@@ -779,7 +733,6 @@ namespace NOSaveSystem
             if (_pauseReflectFailed) return false;
             try
             {
-                // GameManager.playerInput is a Rewired.Player; read it untyped so no Rewired reference is needed.
                 if (_playerInputField == null && _playerInputProp == null)
                 {
                     const System.Reflection.BindingFlags bf = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
@@ -816,8 +769,6 @@ namespace NOSaveSystem
                 }
                 if (!ButtonPresent(m))
                 {
-                    // v0.10.1 (L7): exponential back-off after repeated injection failures (0.5s -> max 30s);
-                    // reset whenever the menu is opened again or the button is present.
                     float now = Time.realtimeSinceStartup;
                     if (now < _pollNextAt) return;
                     MenuMode mode = MenuMode.Leaderboard;
@@ -838,16 +789,14 @@ namespace NOSaveSystem
         }
     }
 
-    // ====================================================================== save list / files
-
     internal class SaveEntry
     {
         public string Path;
         public DateTime Time;
         public string Mission;
         public string Aircraft;
-        public bool IsLatest;      // same content as midmission_autosave.json (what F6 / Continue load)
-        public bool IsAutosaveFile; // Path is the autosave itself (no archive copy)
+        public bool IsLatest;
+        public bool IsAutosaveFile;
         public long Length;
         public string Utc;
         public bool HasMeta;
@@ -916,8 +865,6 @@ namespace NOSaveSystem
             catch (Exception ex) { NoSaveV0100.Warn("read save meta FAIL " + path + ": " + ex.Message); return null; }
         }
 
-        /// <summary>Backward compatible: v0.10 "nosaveMeta" object; else manifest.utc / mission.name / player aircraft object /
-        /// nosavePlayerState; else file-name stamp / mtime and "Unknown".</summary>
         private static SaveEntry Parse(string path, FileInfo fi)
         {
             var e = new SaveEntry { Path = path, Length = fi.Length, Time = fi.LastWriteTime, Mission = "Unknown", Aircraft = "Unknown" };
@@ -945,7 +892,7 @@ namespace NOSaveSystem
             { e.Time = u.Kind == DateTimeKind.Utc ? u.ToLocalTime() : u; timeSet = true; }
             if (!timeSet)
             {
-                var fn = System.IO.Path.GetFileNameWithoutExtension(path); // midmission_yyyyMMdd_HHmmss[_fff]
+                var fn = System.IO.Path.GetFileNameWithoutExtension(path);
                 if (fn.StartsWith("midmission_", StringComparison.Ordinal) &&
                     DateTime.TryParseExact(fn.Substring(11), new[] { "yyyyMMdd_HHmmss_fff", "yyyyMMdd_HHmmss" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var ft)) e.Time = ft;
             }
@@ -1005,7 +952,6 @@ namespace NOSaveSystem
             try { if (string.Equals(NOSaveSystemPlugin.LastLoadedPath, json, StringComparison.OrdinalIgnoreCase)) NOSaveSystemPlugin.LastLoadedPath = null; } catch { }
         }
 
-        /// <summary>v0.10.1 (M3): copy src over dst atomically (.tmp + File.Replace, move/copy fallback). Leaves no .tmp/.bak.</summary>
         private static void ReplaceAtomic(string src, string dst)
         {
             string tmp = dst + ".tmp", bak = dst + ".bak";
@@ -1030,12 +976,9 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>Deletes the save (+ .deep sidecar). If it was the latest (= autosave content), the newest remaining
-        /// archived save is first promoted to midmission_autosave.json (atomic; v0.10.1 M3) and only then are the old
-        /// files deleted, so F6/Continue never see a half-promoted pair. With nothing left the autosave is removed.</summary>
         internal static void Delete(SaveEntry e)
         {
-            if (!NOSaveSystemPlugin.GateSp("delete")) return; // v0.10.2
+            if (!NOSaveSystemPlugin.GateSp("delete")) return;
             var plug = NOSaveSystemPlugin.Instance;
             if (e == null || plug == null) return;
             string auto = plug.AutosavePath;
@@ -1060,14 +1003,14 @@ namespace NOSaveSystem
                 {
                     ReplaceAtomic(next.Path, auto);
                     if (File.Exists(next.Path + ".deep")) ReplaceAtomic(next.Path + ".deep", auto + ".deep");
-                    else DeleteFile(auto + ".deep"); // never leave the old sidecar next to the promoted save
+                    else DeleteFile(auto + ".deep");
                     _cache.Remove(auto);
                     NoSaveV0100.Log("promoted " + next.Path + " -> autosave (F6/Continue now load it)");
                 }
                 catch (Exception ex)
                 {
                     NoSaveV0100.Warn("promote FAIL - nothing deleted: " + ex.Message);
-                    return; // delete only after a successful promote
+                    return;
                 }
                 if (!isAutoFile) DeletePair(e.Path);
             }
@@ -1081,8 +1024,6 @@ namespace NOSaveSystem
                 try { if (File.Exists(junk)) File.Delete(junk); } catch { }
         }
     }
-
-    // ====================================================================== uGUI panel
 
     internal class SaveMenuPanel : MonoBehaviour
     {
@@ -1136,8 +1077,6 @@ namespace NOSaveSystem
             catch (Exception ex) { NoSaveV0100.Warn("panel build FAIL: " + ex); return null; }
         }
 
-        /// <summary>v0.11.0: main-menu instance of the SAME save list panel. Styles come from the cloned native
-        /// main-menu button (MainMenu.missionsButton); no pause-menu art exists in the menu scene.</summary>
         internal static SaveMenuPanel CreateMain(Transform host, Button tpl)
         {
             try
@@ -1192,9 +1131,9 @@ namespace NOSaveSystem
                 var listImg = AddImage(list.gameObject, listStyle, new Color(0.40f, 0.45f, 0.51f, 0.5f));
                 listImg.raycastTarget = true;
                 var vp = NewRT("Viewport", list);
-                Stretch(vp, 4, 4, 22, 4); // v0.10.2: right 22 px reserved for the scrollbar
+                Stretch(vp, 4, 4, 22, 4);
                 vp.gameObject.AddComponent<RectMask2D>();
-                vp.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.001f); // raycast surface for wheel/drag
+                vp.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.001f);
                 var content = NewRT("Content", vp);
                 content.anchorMin = new Vector2(0f, 1f); content.anchorMax = new Vector2(1f, 1f); content.pivot = new Vector2(0.5f, 1f);
                 content.sizeDelta = new Vector2(0f, 0f); content.anchoredPosition = Vector2.zero;
@@ -1228,7 +1167,6 @@ namespace NOSaveSystem
                 }
                 else
                 {
-                    // v0.11.0: the old main-menu Continue box loaded the autosave (latest save) in one click; kept here.
                     p._continueLatest = p.MakeButton(p._tplGreen, foot, "NOSave_ContinueLatest", "CONTINUE (LATEST)", p.OnContinueLatest);
                     PlaceRight((RectTransform)p._continueLatest.transform, 210f, 220f, 40f);
                 }
@@ -1245,7 +1183,6 @@ namespace NOSaveSystem
 
         private Image _rowStyle;
 
-        // ---------- helpers ----------
         private static RectTransform NewRT(string name, Transform parent)
         {
             var go = new GameObject(name, typeof(RectTransform));
@@ -1321,7 +1258,6 @@ namespace NOSaveSystem
             return t;
         }
 
-        /// <summary>v0.11.1 (L2): minimal uGUI button used only when cloning the native template failed.</summary>
         private static GameObject PlainButton(Transform parent, string name)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
@@ -1338,7 +1274,7 @@ namespace NOSaveSystem
         private Button MakeButton(Button tpl, Transform parent, string name, string label, UnityAction onClick)
         {
             var go = tpl != null ? NoSaveV0100.CloneClean(tpl.gameObject, parent, name) : null;
-            if (go == null) go = PlainButton(parent, name); // v0.11.1 (L2): graceful fallback, panel still usable
+            if (go == null) go = PlainButton(parent, name);
             go.SetActive(true);
             var b = go.GetComponent<Button>();
             b.onClick = new Button.ButtonClickedEvent();
@@ -1403,7 +1339,6 @@ namespace NOSaveSystem
             _confirm.SetActive(false);
         }
 
-        // ---------- behaviour ----------
         internal void Open()
         {
             HideConfirm();
@@ -1460,7 +1395,7 @@ namespace NOSaveSystem
                     _continueLatest.interactable = has;
                 }
                 var plug = NOSaveSystemPlugin.Instance;
-                SetStatus(_entries.Count == 1 ? "1 save" : _entries.Count + " saves"); // v0.10.2: count only, no path
+                SetStatus(_entries.Count == 1 ? "1 save" : _entries.Count + " saves");
                 LayoutRebuilder.ForceRebuildLayoutImmediate(_content);
                 try { var sr = _content.GetComponentInParent<ScrollRect>(); if (sr != null) sr.verticalNormalizedPosition = 1f; } catch { }
                 NoSaveV0100.Log("save menu listed " + _entries.Count + " save(s)");
@@ -1479,9 +1414,6 @@ namespace NOSaveSystem
             ColText(row, NoSaveUi.Ascii(e.Mission ?? "Unknown"), _tplLabel, 17f, 0f, 1f);
             ColText(row, NoSaveUi.Ascii(e.Aircraft ?? "Unknown"), _tplLabel, 17f, 210f, 0f);
             var entry = e;
-            // v0.10.2: the row owns its LOAD/DELETE buttons as plain uGUI children (laid out by the row's
-            // HorizontalLayoutGroup, clipped by the viewport RectMask2D). Cloned game buttons carried their own
-            // layout/canvas setup and rendered outside the list with many saves.
             MakeRowButton(_tplGreen, row, "NOSave_Load", "LOAD", () => OnLoad(entry), 100f);
             MakeRowButton(_tplRed, row, "NOSave_Delete", "DELETE", () => OnDelete(entry), 100f);
         }
@@ -1540,11 +1472,10 @@ namespace NOSaveSystem
             if (plug == null) return;
             if (!NOSaveSystemPlugin.GateSp("SAVE MENU new save")) { Close("left SP host", true); return; }
             if (!plug.CanStartOp) { NoSaveV0100.Log("menu New Save refused: busy"); SetStatus("NOSave busy - try again in a moment"); return; }
-            int counterBefore = NOSaveSystemPlugin.SaveCounter; // v0.10.1 (L5): explicit success signal, not timestamps
+            int counterBefore = NOSaveSystemPlugin.SaveCounter;
             try { plug.CaptureMidMissionSnapshot(); }
             catch (Exception ex) { NoSaveV0100.Warn("menu New Save FAIL: " + ex.Message); SetStatus("Save failed - see log"); return; }
             Refresh();
-            // v0.10.2d: success = the write counter moved; an empty/late archive listing is not a refusal
             bool ok = NOSaveSystemPlugin.SaveCounter != counterBefore;
             NoSaveV0100.Log("menu New Save result=" + (ok ? "saved" : "not saved (refused, see log)") + " listed=" + _entries.Count);
             if (!ok) SetStatus("Save refused (no running mission?) - see log");
@@ -1566,7 +1497,6 @@ namespace NOSaveSystem
             NoSaveUi.SetStatus(started ? "NOSave: loading " + e.Mission + " (" + Fmt(e.Time) + ")" : "NOSave: load refused (see log)", 6f);
         }
 
-        /// <summary>v0.11.0: main-menu CONTINUE (LATEST) = the old Continue box: load the autosave.</summary>
         private void OnContinueLatest()
         {
             NoSaveV0100.Log("main-menu CONTINUE (LATEST) clicked");
@@ -1575,9 +1505,6 @@ namespace NOSaveSystem
             StartMainMenuLoad(null, "latest");
         }
 
-        /// <summary>v0.11.0: main-menu load = the real Continue flow (offline SP host, mission load + loading screen,
-        /// MissionReload restore, PAUSE0). path null = autosave. The SP gate (main menu, nothing hosted, not editor)
-        /// is enforced here and again inside the Continue coroutine; the coroutine always hosts Offline/SinglePlayer.</summary>
         private void StartMainMenuLoad(string path, string what)
         {
             var plug = NOSaveSystemPlugin.Instance;
@@ -1612,18 +1539,17 @@ namespace NOSaveSystem
         }
     }
 
-    /// <summary>Retry injection while the pause menu is open (e.g. if the Open postfix was missed).</summary>
     internal class NoSaveV0100Behaviour : MonoBehaviour
     {
         private float _next;
         private void Update()
         {
             float now = Time.realtimeSinceStartup;
-            if (NoSaveV0100.MainPanelOpen && Input.GetKeyDown(KeyCode.Escape)) NoSaveV0100.HandleEscMain(); // v0.11.0
+            if (NoSaveV0100.MainPanelOpen && Input.GetKeyDown(KeyCode.Escape)) NoSaveV0100.HandleEscMain();
             if (now < _next) return;
             _next = now + 0.5f;
             NoSaveV0100.Poll();
-            NoSaveV0100.PollMain("poll"); // v0.11.0
+            NoSaveV0100.PollMain("poll");
         }
     }
 
@@ -1637,7 +1563,6 @@ namespace NOSaveSystem
         }
     }
 
-    /// <summary>v0.11.0: inject the main-menu SAVE MENU button when the main menu starts.</summary>
     [HarmonyPatch(typeof(MainMenu), "Start")]
     internal static class Patch_MainMenu_Start_V0110
     {
@@ -1648,7 +1573,6 @@ namespace NOSaveSystem
         }
     }
 
-    /// <summary>ESC while the save menu is open closes the save menu (or its confirm) instead of resuming the game.</summary>
     [HarmonyPatch(typeof(GameplayUI), "Update")]
     internal static class Patch_GameplayUI_Update_V0100
     {

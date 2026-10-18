@@ -8,17 +8,11 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.9.6: missiles in flight (target, guiding owner, seeker mode, motor/fuel, age, exact velocity) and
-    /// aircraft targeting (WeaponManager target list, active station, Pilot.primaryTarget, AI currentTarget).
-    /// Extra state lives in SavedUnitDto.v096 as "k=v;k=v" (escaped) so old saves stay compatible.
-    /// </summary>
     internal static class NoSaveV096
     {
         private const BindingFlags BF = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private static void Log(string m) { NOSaveSystemPlugin.Log?.LogInfo("v096: " + m); }
 
-        // ---------- kv helpers ----------
         private static string Esc(string s) { return (s ?? "").Replace("%", "%25").Replace(";", "%3B").Replace("=", "%3D").Replace("|", "%7C"); }
         private static string Unesc(string s) { return (s ?? "").Replace("%7C", "|").Replace("%3D", "=").Replace("%3B", ";").Replace("%25", "%"); }
         private static string Fs(float v) { return v.ToString("R", CultureInfo.InvariantCulture); }
@@ -57,7 +51,6 @@ namespace NOSaveSystem
             return u;
         }
 
-        // ---------- capture ----------
         internal static string CaptureExtra(Unit unit)
         {
             var sb = new StringBuilder();
@@ -121,7 +114,6 @@ namespace NOSaveSystem
                 }
                 catch { }
             }
-            // v0.9.8: per-station / per-weapon ammo for every armed unit (aircraft, vehicles, ships)
             try
             {
                 if (!(unit is Missile) && unit.weaponStations != null && unit.weaponStations.Count > 0)
@@ -145,7 +137,6 @@ namespace NOSaveSystem
             return sb.ToString();
         }
 
-        // ---------- weapon ammo (v0.9.8) ----------
         private static MidMissionSnapshot _ammoSnap;
         private static float _ammoSnapAt = -1000f;
 
@@ -213,7 +204,6 @@ namespace NOSaveSystem
             return true;
         }
 
-        // ---------- missile spawn ----------
         private static readonly List<KeyValuePair<Missile, SavedUnitDto>> _missiles = new List<KeyValuePair<Missile, SavedUnitDto>>();
 
         internal static bool TrySpawnMissile(Spawner spawner, SavedUnitDto dto, GlobalPosition gp, Quaternion rot, StringBuilder plan)
@@ -271,7 +261,6 @@ namespace NOSaveSystem
                         t.GetField("fuelMass", BF)?.SetValue(mo, fuel);
                         if (act)
                         {
-                            // Activate() computes burnRate = fuelMass / burnTime -> set burnTime = remaining burn so the rate matches.
                             if (rate > 0f) t.GetField("burnTime", BF)?.SetValue(mo, Mathf.Max(0.0001f, fuel / rate));
                             t.GetField("delayTimer", BF)?.SetValue(mo, 0f);
                         }
@@ -283,7 +272,6 @@ namespace NOSaveSystem
             try { if (m.rb != null && dto.velocity != null) m.rb.velocity = new Vector3(dto.velocity.x, dto.velocity.y, dto.velocity.z); } catch { }
         }
 
-        // ---------- post pass ----------
         internal static void RestoreTargetsAndMissiles(MidMissionSnapshot snap, StringBuilder plan)
         {
             _ammoSnap = snap; _ammoSnapAt = Time.unscaledTime;
@@ -296,19 +284,17 @@ namespace NOSaveSystem
         {
             foreach (var w in new[] { 0.5f, 1.5f, 3f })
             {
-                float t = 0f; while (t < w) { t += NoSaveWait.Dt(); yield return null; } // v0.11.0: pause-aware
+                float t = 0f; while (t < w) { t += NoSaveWait.Dt(); yield return null; }
                 if (Pass(snap, null, "retry+" + w + "s") == 0) yield break;
             }
             NoSaveWait.Timeout("targets-retry", 5f, "unresolved missile/target references left as spawned");
             _missiles.Clear();
         }
 
-        /// <returns>number of unresolved references</returns>
         private static int Pass(MidMissionSnapshot snap, StringBuilder plan, string pass)
         {
             _byName = null;
             int unresolved = 0, mOk = 0, aOk = 0;
-            // Missiles: re-target / re-owner if target spawned after the missile.
             foreach (var kv in _missiles.ToArray())
             {
                 var m = kv.Key; if (m == null) continue;
@@ -336,7 +322,6 @@ namespace NOSaveSystem
                 }
                 catch (Exception ex) { Log(pass + " missile retarget FAIL " + ex.Message); }
             }
-            // Aircraft targets
             if (snap?.aircraft != null)
             {
                 foreach (var dto in snap.aircraft)
@@ -387,9 +372,9 @@ namespace NOSaveSystem
                     try { isLocal = GameManager.IsLocalAircraft(ac); } catch { }
                     var hud = isLocal ? SceneSingleton<CombatHUD>.i : null;
                     wm.ClearTargetList();
-                    for (int i = want.Count - 1; i >= 0; i--) // AddTargetList inserts at 0 -> add in reverse to keep order
+                    for (int i = want.Count - 1; i >= 0; i--)
                     {
-                        if (hud != null && hud.aircraft == ac) hud.SelectUnit(want[i]); // native: marker + AddTargetList
+                        if (hud != null && hud.aircraft == ac) hud.SelectUnit(want[i]);
                         if (!wm.CheckIsTarget(want[i])) wm.AddTargetList(want[i]);
                     }
                     Log(pass + " " + label + " targetList=" + want.Count + "/" + names.Length + (isLocal ? " (player HUD)" : ""));

@@ -12,43 +12,29 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// MissionReload (v0.8.5): true mission re-entry with vanilla loading flow.
-    /// Order (Ovalicus + Foggy / Mirage, not FishNet):
-    /// 1) LoadingScreen.Show (optional UX) + block via busy
-    /// 2) Tear down: Stop(false) + wait !stopping / Menu (vanilla leave; no DestroyImmediate of scene NOs)
-    /// 3) Wait NetworkManager ready -> MissionSaveLoad.TryLoad -> SetMission -> StartHost(Offline, SinglePlayer, MapKey)
-    /// 4) Gate: Host_SceneLoaded + StartMission + OnStartLocalPlayer + !IsLoadingScene + IsRunning (soft-bypass only after scene signal)
-    /// 5) NetworkPause -> despawn mission-default mobiles -> spawn/apply snapshot (Swap core) -> settle -> unpause
-    /// 6) HideLoadingScreen + MessageUI "Restored"
-    /// Swap remains LoadMode=Swap fallback when MissionReload fails or is disabled.
-    /// </summary>
     internal static class MissionReload
     {
         private static bool _startMissionSeen;
         private static bool _localPlayerReady;
         private static float _localPlayerReadyAt;
-        private static bool _hostSceneLoaded; // NetworkManagerNuclearOption.Host_SceneLoaded postfix
-        private static bool _sawLoadingScene; // saw IsLoadingScene=true after StartHost
-        private static FieldInfo _stoppingField; // cached NetworkManagerNuclearOption.stopping
-        private static bool _stoppingFieldLooked; // v0.9.1: cache the MISS too (was re-reflected every frame in wait loops)
+        private static bool _hostSceneLoaded;
+        private static bool _sawLoadingScene;
+        private static FieldInfo _stoppingField;
+        private static bool _stoppingFieldLooked;
 
-        /// <summary>Last RunMissionReloadCo outcome for Continue/F6 fallback decisions.</summary>
         internal static bool LastOk { get; private set; }
         internal static bool LastHostStarted { get; private set; }
         internal static bool LastMissionRunning { get; private set; }
         internal static string LastFailReason { get; private set; }
         internal static bool LastRefusedReentrant { get; private set; }
-        /// <summary>v0.10.1 (H1): true when the run was rejected during preflight (before any tear-down); nothing changed.</summary>
         internal static bool LastPreflightFail { get; private set; }
         private static bool _running;
         internal static bool IsRunning { get { return _running; } }
 
         private const float TearDownTimeoutSec = 45f;
         private const float NetworkReadyTimeoutSec = 30f;
-        private const float HostReadyTimeoutSec = 60f; // v0.9.9: was 180s
-        private const float PostReadySettleSec = 0.5f; // v0.9.9: was 1.5s
-        // Soft bypass only after these floors if postfix missed (Foggy timing).
+        private const float HostReadyTimeoutSec = 60f;
+        private const float PostReadySettleSec = 0.5f;
         private const float StartMissionBypassSec = 5f;
         private const float LocalPlayerBypassSec = 12f;
 
@@ -86,8 +72,6 @@ namespace NOSaveSystem
         {
             try
             {
-                // Instance API (Cecil): GetLoadingScreen() then ShowLoadingScreen(Sprite).
-                // Ready-gate remains StartMission + OnStartLocalPlayer - LoadingScreen is UX only.
                 var ls = LoadingScreen.GetLoadingScreen();
                 if (ls != null)
                 {
@@ -139,10 +123,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>
-        /// SP hard leave mirroring QuitMissionButton.QuitGame host path without disconnect reason spam:
-        /// Stop(false), wait stopping clear / Menu. Does not use EndGameOutcome (soft end / leaderboard).
-        /// </summary>
         internal static IEnumerator TearDownToMenu(StringBuilder plan, float timeoutSec = TearDownTimeoutSec)
         {
             plan?.AppendLine("  MR tear-down: Stop(false) + wait Menu");
@@ -164,7 +144,6 @@ namespace NOSaveSystem
 
             try
             {
-                // Resume pause UI if open so Stop is not fought by pause overlay (QuitGame does this).
                 try
                 {
                     if (GameplayUI.i != null) GameplayUI.i.ResumeGame();
@@ -174,7 +153,6 @@ namespace NOSaveSystem
                 var nm = NetworkManagerNuclearOption.i;
                 if (nm != null)
                 {
-                    // Foggy: hard leave Stop(false). HostEndedMessage is for kicking remotes; SP offline skip.
                     nm.Stop(false);
                     plan?.AppendLine("  MR Stop(false) issued");
                     NOSaveSystemPlugin.Log?.LogInfo("MissionReload: Stop(false) issued");
@@ -221,16 +199,11 @@ namespace NOSaveSystem
             NOSaveSystemPlugin.Log?.LogWarning("MissionReload: tear-down TIMEOUT after " + timeoutSec + "s - forcing Menu");
             NoSaveWait.Timeout("tear-down", timeoutSec, "GameManager.SetGameState(Menu)");
             try { GameManager.SetGameState(GameState.Menu); } catch { }
-            // Extra frames so Menu transition can start before NetworkReady wait.
             yield return null;
             yield return null;
             yield return null;
         }
 
-        /// <summary>
-        /// After Stop/Menu, wait until NetworkManagerNuclearOption.i is usable and not stopping.
-        /// Prevents StartHost NRE / start-while-stopping races.
-        /// </summary>
         private static IEnumerator WaitNetworkManagerReady(StringBuilder plan, float timeoutSec = NetworkReadyTimeoutSec)
         {
             plan?.AppendLine("  MR wait NetworkManager ready");
@@ -286,23 +259,18 @@ namespace NOSaveSystem
             return false;
         }
 
-        /// <summary>
-        /// Full MissionReload coroutine. Caller holds long-busy. Falls back to false so caller can Swap.
-        /// </summary>
         internal static IEnumerator RunMissionReloadCo(bool alreadyAtMenu, System.Action<bool> onDone)
         {
             if (_running)
             {
                 LastRefusedReentrant = true;
                 NOSaveSystemPlugin.Log?.LogWarning("MissionReload: REFUSED - already running (double invocation)");
-                // Do not touch LastOk/LastFailReason of the active run.
                 try { onDone?.Invoke(false); } catch { }
                 yield break;
             }
             _running = true;
             LastRefusedReentrant = false;
             LastPreflightFail = false;
-            // Safe: a throw inside the body no longer strands _running / pause / busy (body finally still runs).
             try { yield return NoSaveCoroutines.Safe(RunMissionReloadCoBody(alreadyAtMenu, onDone), "MissionReload"); }
             finally { _running = false; }
         }
@@ -321,7 +289,7 @@ namespace NOSaveSystem
             LastMissionRunning = false;
             LastFailReason = null;
             LastPreflightFail = false;
-            NoSaveV093.LoadPauseArmed = false; // v0.10.1 (M5): a new load supersedes any pending post-load reassert
+            NoSaveV093.LoadPauseArmed = false;
             ResetGates();
             TryShowLoadingScreen();
 
@@ -335,7 +303,7 @@ namespace NOSaveSystem
                     yield break;
                 }
 
-                string savePath = plug.ResolveLoadPath(); // v0.10.0: save-menu slot or autosave
+                string savePath = plug.ResolveLoadPath();
                 if (!File.Exists(savePath))
                 {
                     plan.AppendLine("  FAIL no save at " + savePath); LastFailReason = "no_save"; LastPreflightFail = true;
@@ -362,8 +330,6 @@ namespace NOSaveSystem
                     yield break;
                 }
 
-                // --- 1b) v0.10.1 (H1): PREFLIGHT - validate everything that can be checked while the current mission
-                // still runs. Any failure aborts here with a status message; the mission is NOT torn down.
                 {
                     string pfName = snap.mission.loadKeyName ?? snap.mission.name;
                     string pfKey = snap.mission.loadKey ?? pfName;
@@ -387,11 +353,8 @@ namespace NOSaveSystem
                     }
                     plan.AppendLine("  PREFLIGHT ok mission='" + pfName + "' manifest.utc=" + snap.manifest.utc);
                 }
-                // v0.10.2e (N4): new engine-hold generation only once the preflight passed (a failed preflight leaves the
-                // running mission, and its holds, untouched)
                 try { NoSaveEngineGear.NewLoad("MissionReload"); } catch { }
 
-                // --- 2) Tear down if in-mission ---
                 if (!alreadyAtMenu)
                 {
                     NoSaveLoadTime.Begin();
@@ -401,7 +364,6 @@ namespace NOSaveSystem
                 {
                     plan.AppendLine("  MR skip tear-down (already menu / Continue)");
                     NOSaveSystemPlugin.Log?.LogInfo("MissionReload: skip tear-down (alreadyAtMenu)");
-                    // Continue: confirm Menu + not stopping before host (avoid half-state StartHost).
                     float menuWait = 0f;
                     const float menuVerifySec = 8f;
                     while (menuWait < menuVerifySec)
@@ -425,12 +387,10 @@ namespace NOSaveSystem
                     if (menuWait >= menuVerifySec) NoSaveWait.Timeout("continue-menu-verify", menuVerifySec, "continue to NetworkManager-ready wait");
                 }
 
-                // --- 2b) Ensure NetworkManager usable before TryLoad/StartHost ---
                 NoSaveLoadTime.Lap("teardown");
                 yield return WaitNetworkManagerReady(plan);
                 NoSaveLoadTime.Lap("netReady");
 
-                // --- 3) TryLoad -> SetMission -> StartHost ---
                 string loadName = snap.mission.loadKeyName ?? snap.mission.name;
                 string loadKey = snap.mission.loadKey ?? loadName;
                 if (string.IsNullOrEmpty(loadName))
@@ -494,7 +454,6 @@ namespace NOSaveSystem
                     yield break;
                 }
 
-                // --- 4) Hard wait: StartMission + local player + IsRunning + units ---
                 float waited = 0f;
                 bool gateOk = false;
                 bool bypassedStartMission = false;
@@ -511,7 +470,6 @@ namespace NOSaveSystem
                     try { if (UnitRegistry.allAircraft != null) acCount = UnitRegistry.allAircraft.Count; } catch { }
                     if (loading) _sawLoadingScene = true;
 
-                    // Also accept GameManager.GetLocalPlayer as local-ready if OnStartLocalPlayer postfix missed.
                     bool localPresent = false;
                     try { localPresent = MidMissionV03Helpers.FindLocalPlayer() != null; } catch { }
                     if (localPresent && !_localPlayerReady)
@@ -521,13 +479,9 @@ namespace NOSaveSystem
                         plan.AppendLine("  MR local player detected via FindLocalPlayer (postfix miss recovery)");
                     }
 
-                    // Cecil: Host_SceneLoaded sets SceneIsReady + SpawnCharacter - prefer over soft timeouts (R1/R2).
                     bool sceneOk = _hostSceneLoaded || (_sawLoadingScene && !loading) || (waited > LocalPlayerBypassSec && !loading);
                     bool startOk = _startMissionSeen || (sceneOk && waited > StartMissionBypassSec);
-                    // Do not soft-bypass localPlayer until scene-load signal (Host_SceneLoaded / !IsLoadingScene).
                     bool localOk = _localPlayerReady || (sceneOk && waited > LocalPlayerBypassSec);
-                    // v0.9.9 HANG FIX: Free Flight / empty missions have NO pre-placed aircraft, so "acCount > 0" never became
-                    // true and the load sat in this loop for the full 180s timeout. Aircraft are now optional after 2s.
                     bool acOk = acCount > 0 || (_startMissionSeen && sceneOk && waited > 2f);
                     bool gate = running && hasMission && !loading && acOk && startOk && localOk && sceneOk;
 
@@ -585,35 +539,30 @@ namespace NOSaveSystem
 
                 if (!gateOk)
                 {
-                    // IsRunning but gates incomplete - proceed cautiously (better than abort mid-host).
                     plan.AppendLine("  MR WARN proceeding with incomplete gates (IsRunning=true)");
                     NOSaveSystemPlugin.Log?.LogWarning("MissionReload: proceeding with incomplete gates (IsRunning=true)");
                 }
 
-                // Extra settle if local-player gate was soft/recovered - give Attach/spawn a beat.
                 float settleTarget = PostReadySettleSec;
                 if (bypassedLocalPlayer || !_localPlayerReady)
                     settleTarget = PostReadySettleSec + 1.5f;
 
-                // Brief settle so default spawns finish before we despawn them
                 float settle = 0f;
                 bool settleEarly = false;
                 while (settle < settleTarget)
                 {
-                    if (!bypassedLocalPlayer && _localPlayerReady && MidMissionV03Helpers.FindLocalPlayer() != null && settle > 0.25f) { settleEarly = true; break; } // v0.9.9 condition-based
+                    if (!bypassedLocalPlayer && _localPlayerReady && MidMissionV03Helpers.FindLocalPlayer() != null && settle > 0.25f) { settleEarly = true; break; }
                     settle += Time.unscaledDeltaTime;
                     yield return null;
                 }
                 if (!settleEarly) NoSaveWait.Timeout("post-ready-settle", settleTarget, "continue (local player " + (_localPlayerReady ? "ready" : "not confirmed") + ")");
 
-                // --- 5) Pause -> apply snapshot (Swap core despawns defaults that match save, spawns from JSON) ---
                 TrySetPaused(true);
                 pausedSet = true;
                 NoSavePause0.MarkApplyStart();
                 plan.AppendLine("  MR NetworkPause=true; applying snapshot via Swap core");
                 NoSaveUi.SetStatus("NOSave MissionReload: applying snapshot...", 8f);
 
-                // Despawn mission-default mobiles; wait saved UniqueNames leave registry (R3 double-despawn race).
                 NoSaveV0910.NoAircraftLoad = NoSaveV0910.IsNoAircraft(snap);
                 plan.AppendLine("  PLAYER saved state=" + (snap.playerState ?? "(pre-0.9.10)") + " noAircraftLoad=" + NoSaveV0910.NoAircraftLoad);
                 try { NoSaveDeepState.CompleteObjectivesEarly(snap, plan); } catch (Exception oex) { plan.AppendLine("  OBJECTIVES early FAIL: " + oex.Message); }
@@ -623,8 +572,6 @@ namespace NOSaveSystem
                 yield return WaitSavedUniqueNamesCleared(snap, plan);
                 NoSaveLoadTime.Lap("nameSettle");
 
-                // v0.10.1 (H2): VERIFIED purge - wait until no old mobile GameObject survives (late default spawns are
-                // despawned too); never spawn the snapshot on top of survivors (ghost COIN_2-style duplicates).
                 {
                     var pr = new NoSaveReconcile.PurgeResult();
                     Player pLocal = null;
@@ -640,28 +587,22 @@ namespace NOSaveSystem
                     }
                 }
 
-                // Free UniqueNames from JSON so Swap spawn reuses saved ids after despawn.
                 try { MidMissionV03Helpers.ClearSavedUniqueNameReservations(snap, plan); } catch (Exception ex) { plan.AppendLine("  MR clear UniqueNames FAIL: " + ex.Message); }
                 try { NoSaveV093.EnsurePlayerFaction(snap, plan); } catch (Exception fex) { plan.AppendLine("  FACTION ensure FAIL: " + fex.Message); }
                 yield return plug.RestoreMidMissionSnapshotCoreCo();
                 NoSaveLoadTime.Lap("spawnCore");
                 if (!NOSaveSystemPlugin.LastCoreOk)
                 {
-                    // v0.9.1: core aborted (purge not verified), threw (swallowed by its Safe wrapper) or was refused.
-                    // Previously MissionReload still reported "Restored" with ok=true.
                     plan.AppendLine("  FAIL snapshot core did not complete (see last_restore_plan.txt)"); LastFailReason = "core_failed";
                     NOSaveSystemPlugin.Log?.LogError("MissionReload: snapshot core did not complete - NOT reporting Restored");
                     NoSaveUi.SetStatus("NOSave MissionReload: snapshot apply failed (see log)", 8f);
                     yield break;
                 }
 
-                NoSavePause0.MarkSceneReady(); // v0.11.0 PAUSE0: scene ready, frame-0 state applied, still NetworkPaused
-                yield return null; // Foggy/Ovalicus: one frame settle before unpause/hide (still paused: no sim tick)
+                NoSavePause0.MarkSceneReady();
+                yield return null;
                 yield return null;
 
-                // v0.11.0 PAUSE0: the remaining restore passes run BEFORE the unpause, so every saved state is in place
-                // when the first simulated tick happens. They are time-independent (late references retry on their
-                // own pause-aware coroutines).
                 try { AuditHangars(plan); } catch (Exception hex) { plan.AppendLine("  HANGAR audit FAIL: " + hex.Message); }
                 try { NoSaveV0910.RestoreDestroyedStatics(snap, plan); } catch (Exception sex) { plan.AppendLine("  STATICS restore FAIL: " + sex.Message); }
                 NoSaveLoadTime.Lap("hangarAudit+statics");
@@ -673,7 +614,6 @@ namespace NOSaveSystem
                 NoSaveLoadTime.Lap("targetsAmmo");
                 try { NoSaveV093.EnsurePlayerFaction(snap, plan); } catch { }
 
-                // v0.11.0 PAUSE0: unpause NetworkPause and open the game's pause menu in the same frame (zero sim ticks).
                 if (NoSaveV0910.NoAircraftLoad)
                 {
                     TrySetPaused(false); pausedSet = false;
@@ -686,9 +626,9 @@ namespace NOSaveSystem
                 }
                 else
                 {
-                    bool p0 = NoSavePause0.HandOff(plan, snap); // always clears NetworkPause; captures frame-0 economy/blackboard/ammo
+                    bool p0 = NoSavePause0.HandOff(plan, snap);
                     pausedSet = false;
-                    if (!p0) NoSaveV093.SchedulePauseAfterLoad(plan); // fallback: legacy delayed pause
+                    if (!p0) NoSaveV093.SchedulePauseAfterLoad(plan);
                 }
 
                 try
@@ -705,7 +645,6 @@ namespace NOSaveSystem
             }
             finally
             {
-                // Always clear pause if we set it (exception / early yield-break after pause).
                 if (pausedSet)
                 {
                     TrySetPaused(false);
@@ -731,7 +670,6 @@ namespace NOSaveSystem
                 }
                 catch { }
                 NOSaveSystemPlugin.Log?.LogInfo(plan.ToString());
-                // v0.9.1: a throwing callback inside finally would abort the rest of the unwind.
                 try { onDone?.Invoke(ok); }
                 catch (Exception cbEx) { NOSaveSystemPlugin.Log?.LogWarning("MissionReload onDone callback: " + cbEx.Message); }
             }
@@ -742,11 +680,6 @@ namespace NOSaveSystem
             try { return MissionManager.IsRunning; } catch { return false; }
         }
 
-        /// <summary>
-        /// After StartHost, mission definition spawns its default unit set. Despawn all mobiles
-        /// so snapshot apply does not double with leftovers (Ovalicus trap). Statics skipped.
-        /// Logs how many live UniqueNames overlap the save set (match vs extras).
-        /// </summary>
         private static IEnumerator DespawnAllDefaultMobiles(StringBuilder plan, MidMissionSnapshot snap)
         {
             var savedNames = BuildSavedUniqueNameSet(snap);
@@ -780,14 +713,13 @@ namespace NOSaveSystem
 
             try
             {
-                // Ground vehicles / ships via allUnits if available
                 if (UnitRegistry.allUnits != null)
                 {
                     var list = new List<Unit>();
                     foreach (var u in UnitRegistry.allUnits)
                     {
                         if (u == null) continue;
-                        if (u is Aircraft) continue; // already done
+                        if (u is Aircraft) continue;
                         string kind = null;
                         try { kind = u.GetType().Name; } catch { kind = "?"; }
                         if (MidMissionV03Helpers.IsStaticUnitKind(kind, u)) continue;
@@ -830,7 +762,6 @@ namespace NOSaveSystem
             yield return null;
         }
 
-        /// <summary>v0.9.2: log per-airbase hangar availability after restore (diagnoses "no hangars").</summary>
         private static void AuditHangars(StringBuilder plan)
         {
             var bases = UnityEngine.Object.FindObjectsOfType<Airbase>();
@@ -872,10 +803,6 @@ namespace NOSaveSystem
                 if (snap.ships != null)
                     foreach (var s in snap.ships)
                         if (s != null && !string.IsNullOrEmpty(s.private_uniqueName)) set.Add(s.private_uniqueName);
-                // v0.9.2: only swap-safe mobile others (pilots/missiles). Static map units
-                // (hangars, shelters, buildings, '<MAP_UNIT>++*') are never despawned/cleared:
-                // v0.9.1 included them here, so the settle TIMEOUT path destroyed all hangars
-                // ("no hangars" on respawn after load).
                 if (snap.otherUnits != null)
                     foreach (var u in snap.otherUnits)
                         if (u != null && !string.IsNullOrEmpty(u.private_uniqueName)
@@ -887,10 +814,6 @@ namespace NOSaveSystem
             return set;
         }
 
-        /// <summary>
-        /// Wait until saved UniqueNames leave UnitRegistry.customIDLookup (deferred Destroy settle).
-        /// Mitigates R3 double-despawn / UniqueName reservation races before Swap core.
-        /// </summary>
         private static IEnumerator WaitSavedUniqueNamesCleared(MidMissionSnapshot snap, StringBuilder plan)
         {
             var saved = BuildSavedUniqueNameSet(snap);
@@ -900,7 +823,6 @@ namespace NOSaveSystem
                 yield return null;
                 yield break;
             }
-            // v0.8.5: 5s soft wait, then redeespawn holders + force-clear leftovers (R3).
             const float timeoutSec = 5.0f;
             float waited = 0f;
             int lastRemain = -1;
@@ -930,7 +852,6 @@ namespace NOSaveSystem
             foreach (var name in stuck)
                 plan?.AppendLine("    stuck UniqueName '" + name + "'");
 
-            // Second despawn pass: destroy units still holding saved UniqueNames.
             int redeespawned = 0;
             Player localPlayer = null;
             try { localPlayer = MidMissionV03Helpers.FindLocalPlayer(); } catch { }
@@ -959,9 +880,8 @@ namespace NOSaveSystem
             yield return null;
             yield return null;
 
-            // Brief extra settle after redeespawn.
             float extra = 0f;
-            const float extraSec = 0.75f; // v0.9.9 (condition-based early exit)
+            const float extraSec = 0.75f;
             while (extra < extraSec)
             {
                 if (CountSavedNamesStillInRegistry(saved) == 0) break;
@@ -1035,7 +955,6 @@ namespace NOSaveSystem
         {
             try
             {
-                // OnStartLocalPlayer is the local-player Mirage hook; still null-guard.
                 if (__instance != null)
                     MissionReload.NotifyLocalPlayerReady();
             }
@@ -1043,10 +962,6 @@ namespace NOSaveSystem
         }
     }
 
-    /// <summary>
-    /// Cecil: Host_SceneLoaded logs "Server finished loading", sets SceneIsReady, SpawnCharacter.
-    /// Prefer this over soft gate timeouts after StartHost (StartHost -> StartHostAsync.Forget).
-    /// </summary>
     [HarmonyPatch(typeof(NetworkManagerNuclearOption), nameof(NetworkManagerNuclearOption.Host_SceneLoaded))]
     internal static class Patch_NM_Host_SceneLoaded
     {

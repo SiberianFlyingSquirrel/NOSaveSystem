@@ -7,11 +7,6 @@ using System.Text;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.9.0: fail-safe reflection lookups for game members we could NOT confirm from source/Cecil notes.
-    /// Every lookup tries candidate names in order, caches the hit (or miss) per (type, candidate-set), and
-    /// logs once what it found or missed so a PC run documents the real member names.
-    /// </summary>
     internal static class NoSaveReflect
     {
         private const BindingFlags Inst = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -30,7 +25,6 @@ namespace NOSaveSystem
             if (Report.Length < 64 * 1024) Report.AppendLine(msg);
         }
 
-        /// <summary>Find a member (field or property) on type or its bases by candidate names; cached.</summary>
         internal static MemberInfo FindMember(Type t, bool isStatic, params string[] candidates)
         {
             if (t == null || candidates == null || candidates.Length == 0) return null;
@@ -117,7 +111,6 @@ namespace NOSaveSystem
             return t != null && t.InnerException != null ? t.InnerException : ex;
         }
 
-        /// <summary>Find and invoke an instance method with one argument by candidate names. Returns true if invoked.</summary>
         internal static bool TryInvoke1(object target, object arg, Type argType, params string[] candidates)
         {
             if (target == null) return false;
@@ -157,7 +150,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>Resolve a game type by simple name across loaded assemblies (Assembly-CSharp first); cached.</summary>
         internal static Type FindType(params string[] simpleNames)
         {
             string key = string.Join(",", simpleNames);
@@ -198,9 +190,6 @@ namespace NOSaveSystem
             return null;
         }
 
-        // ---------- value encoding (string-typed property bag) ----------
-
-        /// <summary>Encode primitive / enum / string; returns false for unsupported types.</summary>
         internal static bool Encode(object v, out string vtype, out string text)
         {
             vtype = null; text = null;
@@ -221,7 +210,6 @@ namespace NOSaveSystem
             return false;
         }
 
-        /// <summary>Decode to the member's declared type. Returns false if not convertible.</summary>
         internal static bool Decode(string vtype, string text, Type want, out object value)
         {
             value = null;
@@ -239,7 +227,6 @@ namespace NOSaveSystem
                     want == typeof(int) || want == typeof(long) || want == typeof(short) || want == typeof(byte) ||
                     want == typeof(uint) || want == typeof(ushort) || want == typeof(sbyte) || want == typeof(ulong))
                 {
-                    // v0.9.1: integers parse exactly (via double, long/ulong lost precision above 2^53).
                     if (want == typeof(long) && vtype == "i") { value = long.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture); return true; }
                     if (want == typeof(ulong) && vtype == "i") { value = ulong.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture); return true; }
                     double d = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
@@ -262,7 +249,6 @@ namespace NOSaveSystem
                    t == typeof(ushort) || t == typeof(ulong) || t == typeof(sbyte) || t == typeof(decimal);
         }
 
-        /// <summary>Enumerate IEnumerable member value safely (lists/arrays); null when not enumerable.</summary>
         internal static List<object> AsList(object v)
         {
             if (v == null || v is string) return null;

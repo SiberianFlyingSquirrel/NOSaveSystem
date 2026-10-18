@@ -9,36 +9,13 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.11.0: post-load VERIFY. Once per load, after the load settled (player resumed from the PAUSE0 menu, engine
-    /// hold/probe/blend finished, gear/flap coroutines done, scene stable), every saved unit is re-captured with the SAME
-    /// capture path the save uses (CaptureAircraft / CaptureVehicle / CaptureShip / CaptureUnitBase, CaptureMissionInfo,
-    /// CaptureFactions, CaptureActiveObjectives, CaptureDatalink, NoSaveExtState.Capture) and diffed field by field
-    /// against the loaded DTO.
-    ///
-    /// Log: NOSAVE-VERIFY field=&lt;unit&gt;.&lt;field&gt; saved=&lt;v&gt; live=&lt;v&gt; ok|MISMATCH|SKIP(reason), then
-    /// NOSAVE-VERIFY VERIFY PASS n/n | VERIFY FAIL k/n (n = compared fields, SKIPs counted separately).
-    /// Volume rule: the player aircraft, the mission and the factions log every field; other units log every
-    /// MISMATCH / non-trivial SKIP line plus one per-unit summary (ok=a/b) - thousands of identical "ok" lines for
-    /// static buildings would themselves be a GC / log spike.
-    ///
-    /// On MISMATCH: one reassert pass (reassert_retry=1) for the safe groups only, then the affected fields are
-    /// re-verified and logged again. Engine / throttle state is NEVER written (no power dip rule); kinematics,
-    /// objectives, ext-state and gear are log-only.
-    ///
-    /// Caps: settle_wait_max 3 s, 2 ms/frame budget (Stopwatch; the coroutine yields when used up), total_max 5 s from
-    /// settle start. All caps count unpaused time only (a pause in the middle does not fire them). Any cap:
-    /// VERIFY TIMEOUT done=k/n -> abort, game continues. Any exception: VERIFY ERROR &lt;msg&gt; -> abort.
-    /// </summary>
     internal static class NoSaveVerify
     {
-        // ------------------------------------------------------------------ busy tracking (load-path coroutines)
         private static int _busy;
         internal static int Busy { get { return _busy; } }
         internal static void BusyEnter() { _busy++; }
         internal static void BusyExit() { if (_busy > 0) _busy--; }
 
-        /// <summary>Wraps a load-path coroutine so VERIFY's settle waits for it (finally runs on abort too).</summary>
         internal static IEnumerator Track(IEnumerator inner)
         {
             BusyEnter();
@@ -46,48 +23,45 @@ namespace NOSaveSystem
             finally { BusyExit(); }
         }
 
-        // ------------------------------------------------------------------ caps / tolerances (documented)
-        internal const float SettleWaitMax = 3f;     // settle_wait_max
-        internal const float FrameBudgetMs = 2f;     // per-frame compute budget
-        internal const float TotalMax = 5f;          // total_max (from settle start)
-        internal const float UnpauseWaitMax = 600f;  // waiting for the player to leave the PAUSE0 menu (realtime)
-        internal const float EngineWaitMax = 15f;    // unpaused seconds waiting for the engine hold to finish
+        internal const float SettleWaitMax = 3f;
+        internal const float FrameBudgetMs = 2f;
+        internal const float TotalMax = 5f;
+        internal const float UnpauseWaitMax = 600f;
+        internal const float EngineWaitMax = 15f;
         internal const int ReassertRetry = 1;
 
-        // EPS TABLE (dt = simulated seconds since the restore was applied; v,w = saved speed / angular speed)
-        internal const float PosFloor = 1.0f;        // pos: |live - (saved + v*dt)| <= 1 m + 0.25*|v|*dt + 0.5*A*dt^2
+        internal const float PosFloor = 1.0f;
         internal const float PosVelK = 0.25f;
-        internal const float AccAircraft = 40f;      //   A: aircraft ~4 g manoeuvre, ground/sea 5 m/s^2, others 2 m/s^2
+        internal const float AccAircraft = 40f;
         internal const float AccSurface = 5f;
         internal const float AccOther = 2f;
-        internal const float RotFloorDeg = 1.0f;     // rot: angle <= 1 deg + 1.25*|w|*dt*57.3 + 0.5*Alpha*dt^2*57.3 (max 180)
+        internal const float RotFloorDeg = 1.0f;
         internal const float RotWK = 1.25f;
-        internal const float AlphaAircraft = 3f;     //   Alpha rad/s^2: aircraft 3, others 0.5
+        internal const float AlphaAircraft = 3f;
         internal const float AlphaOther = 0.5f;
-        internal const float VelFloor = 0.5f;        // vel: |dv| <= 0.5 + 0.05*|v| + A*dt
+        internal const float VelFloor = 0.5f;
         internal const float VelRel = 0.05f;
-        internal const float AngFloor = 0.05f;       // angvel: |dw| <= 0.05 + 0.5*|w| + Alpha*dt
+        internal const float AngFloor = 0.05f;
         internal const float AngRel = 0.5f;
-        internal const float FuelRel = 0.005f;       // fuel: |live - (saved - rate*dt)| <= 0.5% saved + 0.001 + 0.5*rate*dt (rate measured)
+        internal const float FuelRel = 0.005f;
         internal const float FuelFloor = 0.001f;
         internal const float FuelRateK = 0.5f;
-        internal const float TimeFloor = 0.25f;      // missionTime: |live - (saved + dt)| <= 0.25 s + 2% dt
+        internal const float TimeFloor = 0.25f;
         internal const float TimeRel = 0.02f;
-        internal const float PartHpEps = 0.05f;      // part HP absolute (same as RestorePartHealthExact)
-        internal const float FlapFloorDeg = 0.5f;    // flaps: 0.5 deg + servoSpeed(20 deg/s)*dt
+        internal const float PartHpEps = 0.05f;
+        internal const float FlapFloorDeg = 0.5f;
         internal const float FlapServo = 20f;
-        internal const float GearHingeDeg = 1.0f;    // gear (terminal state): hinge 1 deg, door 0.02
+        internal const float GearHingeDeg = 1.0f;
         internal const float GearDoorEps = 0.02f;
-        internal const float EngineRelFloor = 0.01f; // engine RPM/power: live >= saved - max(passEps, 1%)*max(saved,0.1) - 0.005 (rise allowed)
+        internal const float EngineRelFloor = 0.01f;
         internal const float EngineAbs = 0.005f;
-        internal const float DeadEps = 0.02f;        // destroyed engine: ratio/RPM fields <= 0.02 (x saved ref when not a ratio)
-        internal const float ThrottleSlack = 0.02f;  // player throttle lower than saved by > 2% -> SKIP(throttle-lower)
-        internal const float SmallEps = 1e-4f;       // skill / bravery / plain floats copied at spawn
-        internal const float EscalationEps = 0.01f;  // escalation / thresholds
-        internal const float FundsEps = 0.5f;        // funds / score
-        internal const float ObjPctEps = 0.01f;      // objective completePercent
+        internal const float DeadEps = 0.02f;
+        internal const float ThrottleSlack = 0.02f;
+        internal const float SmallEps = 1e-4f;
+        internal const float EscalationEps = 0.01f;
+        internal const float FundsEps = 0.5f;
+        internal const float ObjPctEps = 0.01f;
 
-        // ------------------------------------------------------------------ state
         private static int _gen;
         private static float _armSim;
         private static readonly Stopwatch _sw = new Stopwatch();
@@ -97,32 +71,24 @@ namespace NOSaveSystem
         private static float _fuel0At;
         private static int _ok, _mis, _skip;
         private static string _unit; private static bool _logAll; private static int _uOk, _uN, _uSkipQuiet;
-        private static HashSet<string> _filter;    // re-verify: only these "unit.field" keys
+        private static HashSet<string> _filter;
         private static readonly List<string> _misKeys = new List<string>(64);
         private static readonly HashSet<string> _misUnits = new HashSet<string>(StringComparer.Ordinal);
         private static readonly List<string> _reassertGroups = new List<string>(8);
         private static bool _thrLower, _holdActive;
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-        // ------------------------------------------------------------------ v0.11.0 build 2: frame-0 capture (V1/V4)
-        // Captured at the PAUSE0 hand-off (first rendered frame, zero sim ticks). Economy / blackboard are compared to the
-        // save THERE and reasserted only there (immediately); after resume, differences are legit gameplay
-        // (kill rewards, spending, captures, escalation) -> SKIP(sim-elapsed), never reasserted.
         private static bool _f0Pending, _f0Valid;
         private static List<FactionEconomyDto> _f0Fac;
         private static SnapshotMission _f0Mis;
         private static readonly Dictionary<string, Dictionary<string, string>> _f0Ammo = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         private static readonly List<string> _f0Notes = new List<string>(16);
-        // v0.11.1: kinematics at frame 0 (position / rotation, zero sim ticks) - VERIFY anchors pos/rot here, so a long
-        // engine hold no longer inflates the eps (saved vs frame0 with the dt=0 eps; live after resume = SKIP(sim-elapsed))
         private struct Kin { public Vector3 p; public Quaternion q; public bool hasP, hasQ; }
         private static readonly Dictionary<string, Kin> _f0Kin = new Dictionary<string, Kin>(StringComparer.Ordinal);
         private static bool _f0KinValid;
 
-        /// <summary>New load: forget any frame-0 capture of a previous load.</summary>
         internal static void ResetFrame0() { _f0Pending = false; _f0Valid = false; _f0Fac = null; _f0Mis = null; _f0Ammo.Clear(); _f0Notes.Clear(); _f0Kin.Clear(); _f0KinValid = false; }
 
-        /// <summary>Called by NoSavePause0.HandOff right after the pause is established (0 sim ticks).</summary>
         internal static void CaptureFrame0(MidMissionSnapshot snap)
         {
             ResetFrame0();
@@ -130,7 +96,6 @@ namespace NOSaveSystem
             var sb = new StringBuilder();
             try
             {
-                // economy
                 var fac = MidMissionV03Helpers.CaptureFactions();
                 int facMis = 0;
                 if (snap.factions != null && fac != null)
@@ -147,7 +112,6 @@ namespace NOSaveSystem
                     fac = MidMissionV03Helpers.CaptureFactions();
                 }
                 _f0Fac = fac;
-                // blackboard (escalation / thresholds)
                 var mis = NOSaveSystemPlugin.CaptureMissionInfo();
                 if (snap.mission != null && mis != null &&
                     (Mathf.Abs(mis.currentEscalation - snap.mission.currentEscalation) > EscalationEps
@@ -159,7 +123,6 @@ namespace NOSaveSystem
                     mis = NOSaveSystemPlugin.CaptureMissionInfo();
                 }
                 _f0Mis = mis;
-                // ammo per unit (V4: ammo that rises after resume = rearm, never lowered back)
                 int ammoUnits = 0;
                 foreach (var d in AllUnits(snap))
                 {
@@ -168,7 +131,6 @@ namespace NOSaveSystem
                     string ex = null; try { ex = NoSaveV096.CaptureExtra(u); } catch { }
                     _f0Ammo[d.private_uniqueName] = ParseAmmo(ex); ammoUnits++;
                 }
-                // kinematics (v0.11.1)
                 int kinN = 0;
                 foreach (var d in AllUnits(snap))
                 {
@@ -198,7 +160,7 @@ namespace NOSaveSystem
             if (snap == null || NOSaveSystemPlugin.Instance == null) return;
             int g = ++_gen;
             _armSim = Time.time;
-            if (!_f0Pending) { _f0Valid = false; _f0Fac = null; _f0Mis = null; _f0Ammo.Clear(); _f0Kin.Clear(); _f0KinValid = false; } // no PAUSE0 for this load
+            if (!_f0Pending) { _f0Valid = false; _f0Fac = null; _f0Mis = null; _f0Ammo.Clear(); _f0Kin.Clear(); _f0KinValid = false; }
             _f0Pending = false;
             LogI("NOSAVE-VERIFY armed src=" + src + " gen=" + g + " (runs once after unpause + engine hold + settle)");
             NOSaveSystemPlugin.Instance.StartCoroutine(NoSaveCoroutines.Safe(VerifyCo(snap, src, g), "VERIFY",
@@ -219,13 +181,11 @@ namespace NOSaveSystem
             catch { return false; }
         }
 
-        // ------------------------------------------------------------------ main coroutine
         private sealed class Item { public int kind; public SavedUnitDto dto; }
         private static readonly List<Item> _items = new List<Item>(512);
 
         private static IEnumerator VerifyCo(MidMissionSnapshot snap, string src, int g)
         {
-            // phase 0: player still in the PAUSE0 menu (or legacy pause pending) - VERIFY settle starts after unpause
             float rt = 0f;
             while (Paused)
             {
@@ -234,8 +194,7 @@ namespace NOSaveSystem
                 if (rt > UnpauseWaitMax) { NoSaveWait.Timeout("verify-unpause", UnpauseWaitMax, "VERIFY aborted"); LogW("NOSAVE-VERIFY VERIFY TIMEOUT done=0/0 (still paused)"); yield break; }
                 yield return null;
             }
-            SampleFuel(snap); // v0.11.0 build 2 (V2): burn rate measured from the resume, not from settle start
-            // phase 1: engine hold / probe / blend / monitor finished (unpaused seconds)
+            SampleFuel(snap);
             float et = 0f; _holdActive = false;
             while (NoSaveEngineGear.AnyActive)
             {
@@ -244,7 +203,6 @@ namespace NOSaveSystem
                 if (et > EngineWaitMax) { _holdActive = true; NoSaveWait.Timeout("verify-engine", EngineWaitMax, "verify now, engine fields SKIP(hold-active)"); break; }
                 yield return null;
             }
-            // phase 2: settle (Busy == 0 and scene stable), cap 3 s unpaused
             float st = 0f;
             while (_busy > 0 || !SceneStable())
             {
@@ -259,7 +217,7 @@ namespace NOSaveSystem
                 yield return null;
             }
             float total = st;
-            _extLive = null; // v0.11.1
+            _extLive = null;
             BuildItems(snap);
             int n = _items.Count, done = 0;
             _ok = _mis = _skip = 0; _misKeys.Clear(); _misUnits.Clear(); _reassertGroups.Clear(); _filter = null; _sb.Length = 0;
@@ -280,7 +238,7 @@ namespace NOSaveSystem
                     _sw.Start();
                 }
                 var cur = _items[done];
-                if (cur.kind == 6) { if (ExtStep(snap)) done++; } // v0.11.1: ext-state spread over frames (2 ms budget)
+                if (cur.kind == 6) { if (ExtStep(snap)) done++; }
                 else { RunItem(snap, cur); done++; }
             }
             _sw.Stop();
@@ -290,9 +248,8 @@ namespace NOSaveSystem
             else LogW("NOSAVE-VERIFY VERIFY FAIL " + _mis + "/" + compared + " skipped=" + _skip + " items=" + n + " groups=" + string.Join(",", _reassertGroups.ToArray()));
 
             if (_mis == 0) yield break;
-            // reassert once, then re-verify only the mismatched fields
             int fixedN = Reassert(snap);
-            yield return null; // one frame for the writes to land
+            yield return null;
             _filter = new HashSet<string>(_misKeys, StringComparer.Ordinal);
             int okBefore = _ok, misBefore = _mis;
             _ok = _mis = _skip = 0;
@@ -340,7 +297,6 @@ namespace NOSaveSystem
             return c + 6;
         }
 
-        // item kinds: 0 mission, 1 unit, 2 factions, 3 objectives, 4 statics, 5 datalink, 6 extState, 7 playerState
         private static void BuildItems(MidMissionSnapshot s)
         {
             _items.Clear();
@@ -383,7 +339,7 @@ namespace NOSaveSystem
                     case 3: BeginUnit("objective", false); CmpObjectives(s.activeObjectives); break;
                     case 4: BeginUnit("statics", false); CmpStatics(s.destroyedStatics); break;
                     case 5: BeginUnit("datalink", false); CmpDatalink(s.datalink); break;
-                    case 6: BeginUnit("ext", false); { List<StateEntryDto> lv = null; try { lv = NoSaveExtState.Capture(null); } catch { } CmpExt(s.extState, lv); } break; // fallback (loops use ExtStep)
+                    case 6: BeginUnit("ext", false); { List<StateEntryDto> lv = null; try { lv = NoSaveExtState.Capture(null); } catch { } CmpExt(s.extState, lv); } break;
                     case 7: BeginUnit("player", true); CmpPlayerState(s.playerState); break;
                 }
             }
@@ -391,7 +347,6 @@ namespace NOSaveSystem
             EndUnit();
         }
 
-        // ------------------------------------------------------------------ result sink
         private static void BeginUnit(string name, bool logAll) { _unit = name; _logAll = logAll; _uOk = _uN = _uSkipQuiet = 0; }
 
         private static void EndUnit()
@@ -400,8 +355,6 @@ namespace NOSaveSystem
             if (_uN > 0 || _uSkipQuiet > 0) Line("NOSAVE-VERIFY unit=" + _unit + " ok=" + _uOk + "/" + _uN + (_uSkipQuiet > 0 ? " quietSkips=" + _uSkipQuiet : ""));
         }
 
-        /// <summary>status 0 ok, 1 MISMATCH, 2 SKIP(reason). quiet SKIPs (input-driven / transient on non-player units)
-        /// are counted, not printed.</summary>
         private static void Res(string field, string saved, string live, int status, string reason, bool quiet = false)
         {
             string key = _unit + "." + field;
@@ -448,10 +401,8 @@ namespace NOSaveSystem
         private static void Exact(string f, int a, int b) { Res(f, a.ToString(Inv), b.ToString(Inv), a == b ? 0 : 1, null); }
         private static void Near(string f, float a, float b, float eps) { Res(f, F(a), F(b), Mathf.Abs(a - b) <= eps ? 0 : 1, Mathf.Abs(a - b) <= eps ? null : "eps=" + F(eps)); }
         private static void SkipF(string f, string a, string b, string why, bool quiet = false) { Res(f, S(a), S(b), 2, why, quiet); }
-        /// <summary>input-driven value: equal -> ok, else SKIP(input-driven) (never MISMATCH, never reasserted).</summary>
         private static void Input(string f, float a, float b) { bool eq = Mathf.Abs(a - b) <= 0.005f; Res(f, F(a), F(b), eq ? 0 : 2, eq ? null : "input-driven", !_logAll); }
 
-        // ------------------------------------------------------------------ coverage (reflection over all DTO types)
         private static readonly Dictionary<Type, string[]> Covered = new Dictionary<Type, string[]>
         {
             { typeof(MidMissionSnapshot), new[] { "manifest", "mission", "aircraft", "vehicles", "ships", "otherUnits", "factions", "activeObjectives", "formatVersion", "extState", "datalink", "playerState", "destroyedStatics", "metaSavedLocal", "metaSavedUtc", "metaMission", "metaAircraft", "metaAircraftType" } },
@@ -471,7 +422,6 @@ namespace NOSaveSystem
         };
         private static bool _coverageLogged;
 
-        /// <summary>Any public DTO field without a comparator logs SKIP(field,no-comparator) (once per process).</summary>
         private static void CheckCoverage()
         {
             if (_coverageLogged) return;
@@ -491,7 +441,6 @@ namespace NOSaveSystem
             Line("NOSAVE-VERIFY coverage dtoFields=" + fields + " noComparator=" + missing);
         }
 
-        // ------------------------------------------------------------------ mission / globals
         private static void CmpMission(SnapshotMission s)
         {
             if (s == null) { SkipF("all", "null", "-", "pre-save-format"); return; }
@@ -511,10 +460,6 @@ namespace NOSaveSystem
             SkipF("error", s.error, l.error, "diagnostic");
         }
 
-        /// <summary>v0.11.0 build 2 (V1): economy / blackboard value. With a frame-0 capture: frame0 vs saved is the
-        /// verdict (ok / MISMATCH; any reassert already happened at frame 0), live vs saved after resume is
-        /// SKIP(sim-elapsed) when different. Without frame 0 (PAUSE0 failed / Swap): log-only, differences
-        /// SKIP(sim-elapsed,no-frame0). Never reasserted here.</summary>
         private static void Board(string f, float saved, float frame0, float live, float eps)
         {
             if (!float.IsNaN(frame0))
@@ -548,7 +493,6 @@ namespace NOSaveSystem
                 Board(n + ".factionFunds", s.factionFunds, f0 != null ? f0.factionFunds : float.NaN, l.factionFunds, FundsEps);
                 Board(n + ".factionScore", s.factionScore, f0 != null ? f0.factionScore : float.NaN, l.factionScore, FundsEps);
             }
-            // v0.11.0 build 2 (V1): no post-resume economy reassert (frame-0 only)
         }
 
         private static void CmpObjectives(List<ObjectiveDto> saved)
@@ -600,21 +544,18 @@ namespace NOSaveSystem
                 DatalinkDto l;
                 if (!idx.TryGetValue(k, out l))
                 {
-                    // target destroyed / gone after load is not a restore failure
                     Unit u = null; try { UnitRegistry.customIDLookup.TryGetValue(s.uniqueName ?? "", out u); } catch { }
                     if (u == null) { SkipF(k + ".tracked", "1", "0", "unit-gone", true); continue; }
                     Res(k + ".tracked", "1", "0", 1, null); continue;
                 }
-                OkQuiet(k + ".tracked"); // tracked
+                OkQuiet(k + ".tracked");
                 if (l.attackers != s.attackers || l.missileAttacks != s.missileAttacks)
                     SkipF(k + ".counters", s.attackers + "/" + s.missileAttacks, l.attackers + "/" + l.missileAttacks, "transient", true);
-                // x/y/z: lastKnownPosition is refreshed by sensors after load -> SKIP(transient), counted quietly
                 if (_filter == null) { _skip++; _uSkipQuiet++; }
             }
             if (_mis > before) AddGroup("datalink");
         }
 
-        // ------------------------------------------------------------------ v0.11.1: ext-state in budgeted steps
         private static List<StateEntryDto> _extLive;
         private static List<Unit> _extUnits;
         private static int _extSec, _extPos, _extSteps;
@@ -622,8 +563,6 @@ namespace NOSaveSystem
         private static readonly Stopwatch _extSw = new Stopwatch();
         internal const int ExtUnitChunk = 48;
 
-        /// <summary>One step of the ext-state item: a capture section or a chunk of 48 units per call (the VERIFY loop's
-        /// 2 ms budget check runs between steps); the last call compares and returns true.</summary>
         private static bool ExtStep(MidMissionSnapshot s)
         {
             if (s.extState == null || s.extState.Count == 0) { BeginUnit("ext", false); CmpExt(s.extState, null); EndUnit(); return true; }
@@ -687,7 +626,6 @@ namespace NOSaveSystem
             Exact("state", saved, live);
         }
 
-        // ------------------------------------------------------------------ units
         private static Unit FindUnit(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
@@ -729,7 +667,6 @@ namespace NOSaveSystem
             SkipF("persistentId", s.persistentId.ToString(Inv), l.persistentId.ToString(Inv), "reassigned-on-spawn", !player);
             Exact("disabled", s.disabled, l.disabled); Exact("unitState", s.unitState, l.unitState);
 
-            // kinematics (log-only)
             Vector3 v = s.velocityCaptured && s.velocity != null ? new Vector3(s.velocity.x, s.velocity.y, s.velocity.z) : Vector3.zero;
             Vector3 w = s.velocityCaptured && s.angularVelocity != null ? new Vector3(s.angularVelocity.x, s.angularVelocity.y, s.angularVelocity.z) : Vector3.zero;
             Kin k0 = default(Kin); bool hasK0 = _f0KinValid && _f0Kin.TryGetValue(s.private_uniqueName ?? "", out k0);
@@ -739,7 +676,6 @@ namespace NOSaveSystem
                 var lp = new Vector3(l.globalPosition.x, l.globalPosition.y, l.globalPosition.z);
                 if (hasK0 && k0.hasP)
                 {
-                    // v0.11.1: anchored at frame 0 (dt = 0): saved vs frame0 with the floor eps; live = sim-elapsed info
                     float d0 = (k0.p - sp).magnitude;
                     Res("globalPosition", V3(sp), V3(k0.p) + "(frame0)", d0 <= PosFloor ? 0 : 1, "d=" + F(d0) + " eps=" + F(PosFloor) + " (anchored at frame0)");
                     SkipF("globalPosition.live", V3(k0.p), V3(lp), "sim-elapsed d_from_frame0=" + F((lp - k0.p).magnitude) + " dt=" + F(dt), !player);
@@ -860,7 +796,6 @@ namespace NOSaveSystem
                 else Res(f, a.ToString(Inv), b.ToString(Inv), 1, "more than saved at frame0");
             }
             if (_mis > before) AddGroup("ammo");
-            // other v096 keys (missile / targeting): equal -> ok, else SKIP(transient) quietly
             Dictionary<string, string> ks = null, kl = null;
             try { ks = NoSaveV096.Parse(s.v096); kl = NoSaveV096.Parse(l.v096 ?? ""); } catch { }
             if (ks == null) return;
@@ -873,8 +808,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>v0.11.0 build 2 (V4): lowering ammo back to saved is allowed only when the frame-0 capture already
-        /// had this live value (restore error). Ammo that rose after resume = rearm -> log-only. No frame 0 -> log-only.</summary>
         private static bool AmmoReassertOk(string unit, string key, int live)
         {
             if (!_f0Valid || unit == null) return false;
@@ -886,7 +819,6 @@ namespace NOSaveSystem
         private static int AmmoOf(string v) { int c = v.IndexOf(','); int a; int.TryParse(c < 0 ? v : v.Substring(0, c), NumberStyles.Integer, Inv, out a); return a; }
         private static string TypeOf(string v) { int c = v.IndexOf(','); return c < 0 ? "" : v.Substring(c + 1); }
 
-        // ------------------------------------------------------------------ aircraft
         private static void ComputeThrottleLower(MidMissionSnapshot s)
         {
             _thrLower = false;
@@ -915,10 +847,8 @@ namespace NOSaveSystem
             }
         }
 
-        internal const float FuelSpanMin = 0.5f; // v0.11.0 build 2 (V2): burn rate needs >= 0.5 s of sim time since resume
+        internal const float FuelSpanMin = 0.5f;
 
-        /// <summary>Expected fuel = saved - rate*dt, rate measured from the resume sample. False = rate unknown
-        /// (no sample or span &lt; 0.5 s) -> caller SKIPs (no reassert).</summary>
         private static bool FuelExpected(SavedAircraftDto s, float live, out float exp, out float rate)
         {
             rate = 0f; exp = s.fuel;
@@ -929,8 +859,6 @@ namespace NOSaveSystem
             return true;
         }
 
-        /// <summary>v0.11.0 build 3 (G2): live fuel above the resume sample (+FuelFloor) means a refuel happened after
-        /// the load -> SKIP(refueled-after-load), never lowered (a refuel is a gameplay effect).</summary>
         private static bool FuelRefueled(SavedAircraftDto s, float live, out float f0)
         {
             f0 = 0f;
@@ -950,7 +878,7 @@ namespace NOSaveSystem
                     float eps = FuelRel * Mathf.Abs(s.fuel) + FuelFloor + FuelRateK * rate * dt;
                     bool ok = Mathf.Abs(l.fuel - exp) <= eps;
                     Res("fuel", F(s.fuel) + "-" + F(rate) + "*" + F(dt), F(l.fuel), ok ? 0 : 1, "expected=" + F(exp) + " eps=" + F(eps));
-                    if (!ok && exp < l.fuel) AddGroup("fuel"); // lower-only reassert (never refund)
+                    if (!ok && exp < l.fuel) AddGroup("fuel");
                 }
             }
             else SkipF("fuel", "-", F(l.fuel), "not-captured");
@@ -964,7 +892,6 @@ namespace NOSaveSystem
                 float eps = PosFloor + PosVelK * vy * dt + 0.5f * AccAircraft * dt * dt + (s.velocityCaptured && s.velocity != null ? Mathf.Abs(s.velocity.y) * dt : 0f);
                 Near("radarAlt", s.radarAlt, l.radarAlt, eps);
             }
-            // controls
             if (player)
             {
                 float thr, acc; bool on;
@@ -993,8 +920,6 @@ namespace NOSaveSystem
 
         private static float EngTol(float saved) { return Mathf.Max(NoSaveEngineGear.LastPassEps, EngineRelFloor) * Mathf.Max(Mathf.Abs(saved), 0.1f) + EngineAbs; }
 
-        /// <summary>Engine power/RPM: never reasserted (no-dip rule). Lower than saved by more than passEps: SKIP if the
-        /// player lowered the throttle, else MISMATCH (log-only). Rise allowed.</summary>
         private static void EngVal(string f, float saved, float live, bool dead)
         {
             if (_holdActive) { SkipF(f, F(saved), F(live), "hold-active"); return; }
@@ -1048,7 +973,6 @@ namespace NOSaveSystem
                 var sd = se[i].Value; var ld = le[i].Value;
                 bool dead = IsDead(sd); if (dead) deadN++;
                 string a, b;
-                // ENG-DMG1: per-engine operable / destroyed exact
                 if (sd.TryGetValue("operable", out a)) { ld.TryGetValue("operable", out b); Res(f + ".operable", a, b ?? "?", a == b ? 0 : 1, a == b ? null : "per-engine damage state (log-only)"); }
                 if (sd.TryGetValue("inoperable", out a)) { ld.TryGetValue("inoperable", out b); Res(f + ".inoperable", a, b ?? "?", a == b ? 0 : 1, a == b ? null : "per-engine damage state (log-only)"); }
                 int transient = 0;
@@ -1109,7 +1033,6 @@ namespace NOSaveSystem
             }
         }
 
-        // ------------------------------------------------------------------ reassert (once)
         private static void AddGroup(string g) { if (_filter == null && !_reassertGroups.Contains(g)) _reassertGroups.Add(g); }
 
         private static bool UnitHasMismatch(string unit, string prefix)
@@ -1154,7 +1077,7 @@ namespace NOSaveSystem
                                 var w = st.Weapons[j]; string v;
                                 if (w == null || !sa.TryGetValue(st.Number.ToString(Inv) + "," + j.ToString(Inv), out v)) continue;
                                 int saved = AmmoOf(v);
-                                if (w.ammo > saved && TypeOf(v) == w.GetType().Name && AmmoReassertOk(d.private_uniqueName, st.Number.ToString(Inv) + "," + j.ToString(Inv), w.ammo)) { w.ammo = saved; touched = true; n++; } // never refund, never undo a rearm
+                                if (w.ammo > saved && TypeOf(v) == w.GetType().Name && AmmoReassertOk(d.private_uniqueName, st.Number.ToString(Inv) + "," + j.ToString(Inv), w.ammo)) { w.ammo = saved; touched = true; n++; }
                             }
                             if (touched) { try { st.AccountAmmo(); } catch { } }
                         }
@@ -1167,7 +1090,6 @@ namespace NOSaveSystem
                         var u = FindUnit(d.private_uniqueName); if (u == null) continue;
                         n += LowerParts(u, d.parts, d.private_uniqueName);
                     }
-                // v0.11.0 build 2 (V1): economy / blackboard are reasserted only at frame 0 (CaptureFrame0), never here
                 if (_reassertGroups.Contains("statics")) { NoSaveV0910.RestoreDestroyedStatics(s, null); n++; Line("NOSAVE-VERIFY reassert destroyedStatics"); }
                 if (_reassertGroups.Contains("datalink")) { NoSaveV093.RestoreDatalink(s, null); n++; Line("NOSAVE-VERIFY reassert datalink (missing entries)"); }
                 Line("NOSAVE-VERIFY reassert groups=" + sb + "applied=" + n + " (kinematics/engine/throttle/objectives/ext/gear/economy/blackboard: reassert=skip(log-only))");
@@ -1185,8 +1107,6 @@ namespace NOSaveSystem
             if (s.otherUnits != null) foreach (var d in s.otherUnits) if (d != null) yield return d;
         }
 
-        /// <summary>Parts: only lower live HP that is ABOVE saved, never on parts carrying an engine component
-        /// (no-dip rule). Direct hitPoints write (no damage event, same as RestorePartHealthExact).</summary>
         private static int LowerParts(Unit u, List<PartHpDto> saved, string name)
         {
             int n = 0;
@@ -1206,7 +1126,6 @@ namespace NOSaveSystem
                     foreach (var mb in p.GetComponentsInChildren<MonoBehaviour>(true))
                         if (mb != null && NoSaveEngineGear.EngineTypes.Contains(mb.GetType().Name)) { engine = true; break; }
                     if (engine) { Line("NOSAVE-VERIFY reassert part" + p.id + " " + name + " skip(engine part, no-dip rule)"); continue; }
-                    // v0.11.0 build 2 (V3): never write hp<=0 without the game's damage event (zombie part)
                     if (d.hitPoints <= 0f) { Line("NOSAVE-VERIFY reassert part" + p.id + " " + name + " SKIP(zero-hp)"); continue; }
                     p.hitPoints = Mathf.Clamp(d.hitPoints, PartHpEps, 100f); n++;
                 }
@@ -1217,24 +1136,15 @@ namespace NOSaveSystem
         }
     }
 
-    /// <summary>
-    /// v0.11.0 (R1 + KB e): for ~1 s of unpaused time after the engine hold released, check that the throttle the engine
-    /// sim reads (controlInputs.throttle) follows the player's own command (PilotPlayerState.simulatedThrottle mapped by
-    /// AccToThrottle). Logs NOSAVE-THR FOLLOW ok src=kb|axis acc= ci= maxErr= or NOSAVE-THR STUCK. STUCK = error &gt; 0.01
-    /// for 10 consecutive frames; then ONE capped fix writes the player's command into controlInputs - only when that
-    /// RAISES the value (never lowers power; a lower command is re-applied by the game itself every frame).
-    /// </summary>
     internal static class NoSaveThrottleFollow
     {
         private static int _gen;
         internal const float Window = 1f;
         internal const float ErrEps = 0.01f;
         internal const int StuckFrames = 10;
-        internal const int MaxFrames = 600; // hard cap (frames) even if paused forever
+        internal const int MaxFrames = 600;
 
         private static int _onceAc, _onceGen = int.MinValue;
-        /// <summary>v0.11.1 (R1): start the FOLLOW check once per (aircraft, lock generation) - every player load path
-        /// (MissionReload, main-menu continue, swap; hold released / skipped / no lock) ends up here.</summary>
         internal static void StartOnce(Aircraft ac, string label, int lockGen, string path)
         {
             if (ac == null) return;
@@ -1256,7 +1166,7 @@ namespace NOSaveSystem
         {
             float t = 0f; int frames = 0, checkedN = 0, bad = 0, fixes = 0, budget = MaxFrames;
             float maxErr = 0f, lastAcc = float.NaN, lastCi = float.NaN; bool stuckLogged = false;
-            var cls = new ThrottleMath.SrcClassifier(); // v0.11.1: kb | axis | pad from the game's Rewired "Throttle" action values
+            var cls = new ThrottleMath.SrcClassifier();
             while (t < Window && budget-- > 0)
             {
                 yield return null;

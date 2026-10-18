@@ -12,23 +12,12 @@ using UnityEngine;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.9.7 generic exhaustive state layer ("deep state"). Sidecar file &lt;save&gt;.deep (tab-separated lines).
-    /// For every Unit (and its Assembly-CSharp components, plain nested game objects up to depth 2), FactionHQ,
-    /// Airbase and runtime Objective: serialize all instance fields of supported types (primitives, enum, string,
-    /// Vector2/3/4, Quaternion, Color, GlobalPosition, Unit refs + PersistentID refs by UniqueName, arrays/lists of
-    /// primitives). Units with a prefab are diffed against it (only changed fields stored). Restored after units
-    /// respawn; references resolved in pass 2; explicit handlers re-run afterwards and stay authoritative.
-    /// Plus: SP mission clock offset (MissionManager.MissionTime postfix), timestamp rebasing, fires, vehicle routes,
-    /// completed objectives (native Objective.Complete before despawn).
-    /// </summary>
     internal static class NoSaveDeepState
     {
         private const BindingFlags BF = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
         private static readonly Assembly GameAsm = typeof(Unit).Assembly;
         private static void Log(string m) { NOSaveSystemPlugin.Log?.LogInfo("deep: " + m); }
 
-        // Fields explicit handlers own, identity/network plumbing, or unsafe to write.
         private static readonly HashSet<string> BlockNames = new HashSet<string>(StringComparer.Ordinal)
         {
             "persistentID", "UniqueName", "NetworkUniqueName", "gearState", "gearDeployed", "netId", "syncVarDirtyBits",
@@ -36,7 +25,6 @@ namespace NOSaveSystem
             "playerRef", "PlayerRef", "networked", "spawnTime", "pilotNumber", "simulatedThrottle", "powerRequests", "totalPowerRequested", "ammo", "Ammo",
             "trackingDatabase", "strategicTargets", "hangars", "registered", "initialized", "isInitialized",
         };
-        // Plain-object types we never recurse into (re-derived natively; writing stale plans could NRE).
         private static readonly HashSet<string> BlockRecurseTypes = new HashSet<string>(StringComparer.Ordinal)
         {
             "AIPilotTaxiState", "AIPilotTakeoffState", "AIPilotLandingState", "AIPilotShortLandingState",
@@ -45,8 +33,6 @@ namespace NOSaveSystem
 
         internal static int Skipped, Written, Failed, Rebased, EngineSkipped;
 
-        /// <summary>v0.10.2: engine/prop/transmission components are owned by NoSaveEngineGear (one coherent writer);
-        /// deep state neither saves nor applies them (it wrote PropPitch without moving the blades).</summary>
         private static bool EngineOwned(string compKey)
         {
             int c = compKey.LastIndexOf(':'); if (c < 0) return false;
@@ -54,7 +40,6 @@ namespace NOSaveSystem
             return NoSaveEngineGear.EngineTypes.Contains(tn);
         }
 
-        // ---------------- encode ----------------
         private static string F(float v) { return v.ToString("R", CultureInfo.InvariantCulture); }
         private static string Esc(string s) { return (s ?? "").Replace("\\", "\\\\").Replace("\t", "\\t").Replace("\n", "\\n").Replace("\r", "\\r"); }
         private static string Unesc(string s)
@@ -71,7 +56,6 @@ namespace NOSaveSystem
 
         private static bool IsPrim(Type t) { return t.IsPrimitive || t.IsEnum || t == typeof(string); }
 
-        /// <returns>tag+value or null if unsupported</returns>
         private static string Encode(Type t, object v, out string tag)
         {
             tag = null;
@@ -121,7 +105,6 @@ namespace NOSaveSystem
 
         private static float[] Fl(string s) { var p = s.Split(','); var r = new float[p.Length]; for (int i = 0; i < p.Length; i++) r[i] = float.Parse(p[i], CultureInfo.InvariantCulture); return r; }
 
-        /// <returns>true if decoded; refs returns unresolved when unit missing</returns>
         private static bool Decode(Type t, string tag, string s, out object v, out bool unresolved)
         {
             v = null; unresolved = false;
@@ -187,8 +170,6 @@ namespace NOSaveSystem
             return u;
         }
 
-        // ---------------- object walk ----------------
-        // v0.10.1 (M7): per-type field list cache (Collect runs for every component of every unit on F5).
         private static readonly Dictionary<Type, FieldInfo[]> _fieldCache = new Dictionary<Type, FieldInfo[]>();
         private static FieldInfo[] Fields(Type t)
         {
@@ -200,7 +181,6 @@ namespace NOSaveSystem
                 {
                     if (f.IsLiteral || f.IsInitOnly) continue;
                     if (typeof(Delegate).IsAssignableFrom(f.FieldType)) continue;
-                    // auto-property backing fields (<X>k__BackingField) are allowed
                     list.Add(f);
                 }
             var arr = list.ToArray();
@@ -221,7 +201,6 @@ namespace NOSaveSystem
                 string tag; string enc = null;
                 try { enc = Encode(ft, v, out tag); } catch { tag = null; }
                 if (enc != null) { outMap[prefix + f.Name] = tag + "\t" + enc; continue; }
-                // plain game-assembly class (not UnityEngine.Object): recurse using runtime type
                 if (v != null && !(v is UnityEngine.Object) && v.GetType().IsClass && v.GetType().Assembly == GameAsm
                     && !BlockRecurseTypes.Contains(v.GetType().Name) && !(v is Unit))
                 {
@@ -240,7 +219,6 @@ namespace NOSaveSystem
             return string.Join("/", parts.ToArray());
         }
 
-        /// key -> encoded, for one GameObject hierarchy
         private static Dictionary<string, string> CollectGameObject(GameObject go)
         {
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -248,7 +226,7 @@ namespace NOSaveSystem
             foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
             {
                 if (mb == null || mb.GetType().Assembly != GameAsm) continue;
-                if (NoSaveEngineGear.EngineTypes.Contains(mb.GetType().Name)) continue; // v0.10.2
+                if (NoSaveEngineGear.EngineTypes.Contains(mb.GetType().Name)) continue;
                 string ck = Path(go.transform, mb.transform) + ":" + mb.GetType().Name;
                 counter.TryGetValue(ck, out int n); counter[ck] = n + 1;
                 Collect(mb, ck + "#" + n + "|", map, 0, new HashSet<object>(ReferenceEqualityComparer.Instance));
@@ -276,8 +254,6 @@ namespace NOSaveSystem
             return m;
         }
 
-        // ---------------- save ----------------
-        /// <summary>v0.10.1 (H3): remove a sidecar so a stale .deep can never be applied to a newer .json.</summary>
         private static void DeleteSidecar(string path, string why)
         {
             foreach (var p in new[] { path, path + ".tmp" })
@@ -289,7 +265,6 @@ namespace NOSaveSystem
 
         internal static void Save(string snapshotPath) { Save(snapshotPath, null); }
 
-        /// <param name="manifestUtc">v0.10.1 (H3): manifest.utc of the .json this sidecar belongs to; stamped into the header.</param>
         internal static void Save(string snapshotPath, string manifestUtc)
         {
             if (!NOSaveSystemPlugin.DeepStateEnabled) { Log("disabled by config"); DeleteSidecar(snapshotPath + ".deep", "deep state disabled"); return; }
@@ -298,7 +273,6 @@ namespace NOSaveSystem
             var sb = new StringBuilder(1 << 20);
             float now = Time.timeSinceLevelLoad;
             float mt = 0f; try { mt = NetworkSceneSingleton<MissionManager>.i.MissionTime; } catch { }
-            // v0.10.1: header v2 = "#NOSaveDeep <ver> <levelTime> <missionTime> <manifest.utc>"
             sb.Append("#NOSaveDeep\t2\t").Append(F(now)).Append('\t').Append(F(mt)).Append('\t').Append(Esc(manifestUtc ?? "")).Append('\n');
             int objs = 0, lines = 0;
             void Emit(string owner, Dictionary<string, string> map, Dictionary<string, string> prefab)
@@ -355,7 +329,6 @@ namespace NOSaveSystem
                     }
                 }
                 catch (Exception ex) { Log("objectives FAIL " + ex.Message); }
-                // explicit extras: vehicle routes, fires
                 foreach (var u in UnitRegistry.allUnits.ToArray())
                 {
                     try
@@ -378,7 +351,6 @@ namespace NOSaveSystem
             var path = snapshotPath + ".deep";
             try
             {
-                // v0.10.1 (M4): atomic like WriteAtomic - write+flush .tmp, then File.Replace (fallback copy) .
                 string tmp = path + ".tmp";
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
                 var bytes = new UTF8Encoding(false).GetBytes(sb.ToString());
@@ -409,12 +381,10 @@ namespace NOSaveSystem
             return ab.name;
         }
 
-        // ---------------- load ----------------
         private class Line { public string owner, key, tag, val; }
         private static List<Line> _pending;
         internal static float SavedLevelTime, SavedMissionTime;
         internal static bool HaveClock;
-        /// <summary>v0.10.1 (H3): manifest.utc stamped in the sidecar header (null for pre-0.10.1 sidecars).</summary>
         internal static string SavedUtc;
 
         private static List<Line> Read(string snapshotPath)
@@ -441,8 +411,6 @@ namespace NOSaveSystem
             return list;
         }
 
-        /// Pre-despawn: complete objectives that were complete at save (native Complete -> outcomes), so outcome spawns
-        /// are swept by the despawn-defaults pass and mission flow matches the save.
         internal static void CompleteObjectivesEarly(MidMissionSnapshot snap, StringBuilder plan)
         {
             if (!NOSaveSystemPlugin.RunObjectiveOutcomes || snap?.activeObjectives == null) return;
@@ -466,7 +434,6 @@ namespace NOSaveSystem
 
         internal static void Restore(string snapshotPath, StringBuilder plan) { Restore(snapshotPath, null, plan); }
 
-        /// <param name="expectedUtc">v0.10.1 (H3): manifest.utc of the .json being loaded; a sidecar from another save is skipped.</param>
         internal static void Restore(string snapshotPath, string expectedUtc, StringBuilder plan)
         {
             if (!NOSaveSystemPlugin.DeepStateEnabled) { plan?.AppendLine("  DEEP disabled by config"); return; }
@@ -481,7 +448,6 @@ namespace NOSaveSystem
                 }
                 else if (SavedUtc == null)
                 {
-                    // pre-0.10.1 sidecar (no stamp): accept only if written together with the .json (deep is written right after it)
                     try
                     {
                         var jt = File.GetLastWriteTimeUtc(snapshotPath); var dt = File.GetLastWriteTimeUtc(snapshotPath + ".deep");
@@ -497,7 +463,6 @@ namespace NOSaveSystem
                     return;
                 }
             }
-            // Mission clock (SP): MissionTime getter postfix adds offset.
             if (HaveClock)
             {
                 MissionClockOffset = SavedMissionTime - Time.timeSinceLevelLoad;
@@ -518,7 +483,7 @@ namespace NOSaveSystem
         {
             foreach (var w in new[] { 0.5f, 1.5f, 3f })
             {
-                float t = 0f; while (t < w) { t += NoSaveWait.Dt(); yield return null; } // v0.11.0: pause-aware
+                float t = 0f; while (t < w) { t += NoSaveWait.Dt(); yield return null; }
                 if (_pending == null || _pending.Count == 0) yield break;
                 int before = _pending.Count;
                 _pending = Apply(_pending, null, "retry+" + w + "s");
@@ -553,7 +518,7 @@ namespace NOSaveSystem
                     if (bar < 0) continue;
                     string compKey = ln.key.Substring(0, bar);
                     fieldPath = ln.key.Substring(bar + 1);
-                    if (EngineOwned(compKey)) { EngineSkipped++; continue; } // v0.10.2: old .deep files still carry engine lines
+                    if (EngineOwned(compKey)) { EngineSkipped++; continue; }
                     if (ln.owner.StartsWith("U:", StringComparison.Ordinal))
                     {
                         var u = Find(ln.owner.Substring(2));
@@ -565,7 +530,6 @@ namespace NOSaveSystem
                     else if (ln.owner.StartsWith("AB:", StringComparison.Ordinal)) target = FindAirbase(ln.owner.Substring(3));
                     else if (ln.owner.StartsWith("OBJ:", StringComparison.Ordinal)) target = FindObjective(ln.owner.Substring(4));
                     if (target == null) { Failed++; continue; }
-                    // walk nested plain objects: a.b{Type}.c
                     object obj = target;
                     var segs = fieldPath.Split('.');
                     bool ok = true;
@@ -585,8 +549,7 @@ namespace NOSaveSystem
                         if (unr) unresolved.Add(ln); else Failed++;
                         continue;
                     }
-                    if (unr) unresolved.Add(ln); // partial list: keep retrying
-                    // timestamp rebase (absolute Time.timeSinceLevelLoad stamps)
+                    if (unr) unresolved.Add(ln);
                     if (v is float fv && LooksLikeTimestamp(leaf.Name) && fv > 0.5f && fv <= SavedLevelTime + 0.5f) { v = fv + delta; Rebased++; }
                     var cur = leaf.GetValue(obj);
                     if (Equals(cur, v)) continue;
@@ -665,12 +628,11 @@ namespace NOSaveSystem
                     var dest = new GlobalPosition(d[0], d[1], d[2]);
                     var cur = gv.GetDestination();
                     if ((d[0] != 0f || d[2] != 0f) && gv.UnitCommand != null && (Mathf.Abs(cur.x - dest.x) > 1f || Mathf.Abs(cur.z - dest.z) > 1f))
-                        gv.UnitCommand.SetDestination(dest, false); // native order
+                        gv.UnitCommand.SetDestination(dest, false);
                     routes++;
                 }
                 catch (Exception ex) { plan?.AppendLine("    ROUTE FAIL " + ln.key + ": " + ex.Message); }
             }
-            // Fires / ruptured tanks: fields written by generic layer; re-issue native status for visuals/effects.
             try
             {
                 var fOn = typeof(FuelTank).GetField("onFire", BF); var fRu = typeof(FuelTank).GetField("ruptured", BF); var fPart = typeof(FuelTank).GetField("part", BF);
@@ -680,7 +642,7 @@ namespace NOSaveSystem
                     if (!on && !ru) continue;
                     var part = fPart?.GetValue(ft) as UnitPart; var unit = ft.GetComponentInParent<Unit>();
                     if (part == null || unit == null) continue;
-                    fOn.SetValue(ft, false); fRu.SetValue(ft, false); // let UpdateStatus see a change
+                    fOn.SetValue(ft, false); fRu.SetValue(ft, false);
                     unit.FuelTankStatus(part.id, ru, on);
                     fires++;
                 }
@@ -690,7 +652,6 @@ namespace NOSaveSystem
             Log("routes=" + routes + " fires=" + fires);
         }
 
-        // ---------------- mission clock ----------------
         internal static float MissionClockOffset;
         internal static void ResetClock() { MissionClockOffset = 0f; }
     }

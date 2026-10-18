@@ -179,10 +179,6 @@ namespace NOSaveSystem
             return list;
         }
 
-        /// <summary>
-        /// Compare saved objective snapshot to live ActiveObjectives (read-only diagnostics).
-        /// Does not call Complete() - Outcomes would fire.
-        /// </summary>
         public static void LogObjectiveSnapshotDelta(List<ObjectiveDto> saved, StringBuilder plan)
         {
             if (saved == null || saved.Count == 0) return;
@@ -238,9 +234,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>
-        /// Write Objective.Status field only (public field per Cecil). Never call Complete()/Outcomes.
-        /// </summary>
         public static int TryApplyObjectiveStatuses(List<ObjectiveDto> saved, StringBuilder plan)
         {
             int applied = 0, skipped = 0, missing = 0, parseFail = 0;
@@ -290,7 +283,7 @@ namespace NOSaveSystem
                     {
                         var before = live.Status;
                         if (before.Equals(parsed)) { skipped++; continue; }
-                        live.Status = parsed; // field write only - no Complete()
+                        live.Status = parsed;
                         applied++;
                         plan?.AppendLine("    OBJ status-apply " + k + " " + before + " -> " + parsed);
                     }
@@ -310,9 +303,6 @@ namespace NOSaveSystem
             return applied;
         }
 
-        /// <summary>
-        /// Snapshot UnitPart hitPoints for a unit. Safe read-only.
-        /// </summary>
         public static List<PartHpDto> CapturePartHealth(Unit unit)
         {
             var list = new List<PartHpDto>();
@@ -333,7 +323,7 @@ namespace NOSaveSystem
                     try { dto.id = part.id; } catch { }
                     try { dto.hitPoints = part.hitPoints; } catch { }
                     try { dto.detached = part.IsDetached(); } catch { }
-                    dto.critical = false; // criticalPart is protected - not readable
+                    dto.critical = false;
                     try { dto.name = part.gameObject != null ? part.gameObject.name : part.name; } catch
                     {
                         try { dto.name = part.name; } catch { }
@@ -348,11 +338,6 @@ namespace NOSaveSystem
             return list;
         }
 
-        /// <summary>
-        /// Exact part HP restore: for still-attached parts with matching id, set UnitPart.hitPoints
-        /// to the saved value (raise OR lower). Never detaches/reattaches. Logs failures.
-        /// UnitPart.Repair() always sets 100 - we prefer exact saved value.
-        /// </summary>
         public static int RestorePartHealthExact(Unit unit, List<PartHpDto> saved, StringBuilder plan)
         {
             if (unit == null || saved == null || saved.Count == 0) return 0;
@@ -378,7 +363,7 @@ namespace NOSaveSystem
                 foreach (var dto in saved)
                 {
                     if (dto == null) continue;
-                    if (dto.detached) continue; // do not reattach
+                    if (dto.detached) continue;
                     if (!byId.TryGetValue(dto.id, out var live) || live == null) continue;
                     try { if (live.IsDetached()) continue; } catch { continue; }
 
@@ -446,7 +431,6 @@ namespace NOSaveSystem
                             try
                             {
                                 float rpm = eng.GetRPM();
-                                // best-effort if ratio unavailable
                                 ratio = rpm;
                             }
                             catch { }
@@ -478,14 +462,8 @@ namespace NOSaveSystem
             {
                 plan?.AppendLine("  CONTROLS FAIL: " + ex.Message);
             }
-            // Engine RPM is driven by throttle/physics - snapshot-only (engineRpmRatios).
-            // Airbrake.active and flaps have no public setter - not restored.
         }
 
-        /// <summary>
-        /// Non-intrusive on-screen feedback. Prefers MessageUI.GameMessage (local feed),
-        /// then MissionMessages.ShowMessage (no client RPC), then AircraftActionsReport.
-        /// </summary>
         public static void ShowGameFeedback(string message)
         {
             if (string.IsNullOrEmpty(message)) return;
@@ -542,10 +520,6 @@ namespace NOSaveSystem
             return n;
         }
 
-        /// <summary>
-        /// Rebind local player to aircraft. AttachToAircraft is always safe.
-        /// SetAircraft ejects any previous aircraft - only call when craft differs.
-        /// </summary>
         public static bool RebindPlayerToAircraft(Player player, Aircraft craft, StringBuilder plan)
         {
             if (player == null || craft == null) return false;
@@ -588,10 +562,6 @@ namespace NOSaveSystem
             catch { return true; }
         }
 
-        /// <summary>
-        /// If UniqueName is null/empty, assign a stable id so Spawner.AfterSpawn can RegisterCustomID
-        /// and our post-spawn lookup can find the unit. Mutates dto.private_uniqueName in-memory only.
-        /// </summary>
         public static string EnsureSpawnUniqueName(SavedUnitDto dto)
         {
             if (dto == null) return string.Empty;
@@ -635,10 +605,6 @@ namespace NOSaveSystem
             return candidate;
         }
 
-        /// <summary>
-        /// Persist assigned UniqueName onto a live unit during F5 so subsequent saves/spawns reuse it.
-        /// Uses NetworkUniqueName (set=pub) + UnitRegistry.RegisterCustomID. Mirage-safe SaveId, not ObjectId.
-        /// </summary>
         public static void TryPersistUniqueNameOnLiveUnit(Unit unit, string uniqueName)
         {
             if (unit == null || string.IsNullOrEmpty(uniqueName)) return;
@@ -745,8 +711,6 @@ namespace NOSaveSystem
 
             try
             {
-                // When playerControlled=true, Spawner enqueues to pendingPlayerControlled and Fail()s
-                // (no Unit returned). Flush via TrySpawnPlayerControlled afterward.
                 spawner.SpawnSavedUnit(saved);
             }
             catch (Exception ex)
@@ -789,7 +753,6 @@ namespace NOSaveSystem
                     NOSaveSystemPlugin.Log?.LogWarning("SpawnAircraftFromDto: no local Player for player craft");
                 }
 
-                // Fallback: immediate spawn with playerControlled=false, then caller rebinds.
                 try
                 {
                     try
@@ -835,10 +798,6 @@ namespace NOSaveSystem
             return null;
         }
 
-        /// <summary>
-        /// Restore MissionManager blackboard fields that have public Network* setters.
-        /// MissionTime in SP is Time.timeSinceLevelLoad (no setter). In MP it is NetworkTime - multiplayerStartTime.
-        /// </summary>
         public static int RestoreMissionBlackboard(SnapshotMission mission, bool restoreEscalation, bool restoreMissionTimeMp, StringBuilder plan)
         {
             if (mission == null) return 0;
@@ -859,7 +818,6 @@ namespace NOSaveSystem
                     n++;
                 }
 
-                // Always-safe public Network syncvars when present in snapshot
                 try
                 {
                     mm.NetworkwrecksMaxNumber = mission.wrecksMaxNumber;
@@ -874,8 +832,6 @@ namespace NOSaveSystem
                     plan.AppendLine("  BLACKBOARD thresholds FAIL: " + ex.Message);
                 }
 
-                // v0.10.0 compliance: multiplayer MissionTime (NetworkmultiplayerStartTime) branch removed - NOSave is SP-only.
-                // SP MissionTime uses Time.timeSinceLevelLoad (no setter); the deep-state clock offset handles it.
                 if (restoreMissionTimeMp)
                     plan.AppendLine("  MISSIONTIME_SP skip (Time.timeSinceLevelLoad has no setter); saved=" + mission.missionTime);
             }
@@ -886,10 +842,6 @@ namespace NOSaveSystem
             return n;
         }
 
-        /// <summary>
-        /// Apply saved mount keys to a LIVE aircraft (LoadoutSelector pattern):
-        /// SavedLoadout.CreateLoadout(WeaponManager) -> Networkloadout -> SpawnWeapons.
-        /// </summary>
         public static bool ApplyLiveLoadout(Aircraft ac, List<string> mountKeys, StringBuilder plan)
         {
             if (ac == null) return false;
@@ -907,10 +859,8 @@ namespace NOSaveSystem
                     return false;
                 }
 
-                // Prefer server/host for networked aircraft (SpawnWeapons warhead accounting checks IsServer)
                 try
                 {
-                    // SpawnWeapons does warhead/value accounting on server for networked units
                     if (ac.networked && !ac.IsServer)
                     {
                         plan.AppendLine("  LOADOUT skip non-server networked " + (ac.UniqueName ?? "?"));
@@ -920,7 +870,6 @@ namespace NOSaveSystem
                 catch { }
 
                 var saved = BuildSavedLoadout(mountKeys);
-                // Align Selected count to hardpoint set count if possible
                 try
                 {
                     if (wm.hardpointSets != null && saved.Selected.Count != wm.hardpointSets.Length)
@@ -986,12 +935,6 @@ namespace NOSaveSystem
             }
         }
 
-
-        /// <summary>
-        /// True for buildings/scenery/static emplacements - never teleport or swap these on F6 by default.
-        /// kind is typically Unit.GetType().Name from capture (Building, Scenery, PilotDismounted, ...).
-        /// </summary>
-        /// <summary>v0.9.2: map-placed units and anything hangar/shelter/airbase-like are protected.</summary>
         public static bool IsProtectedStaticName(string uname)
         {
             if (string.IsNullOrEmpty(uname)) return false;
@@ -1018,9 +961,6 @@ namespace NOSaveSystem
                 || k.IndexOf("Structure", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>
-        /// Mobile otherUnits safe to swap (pilot / missile). Containers skipped (ambiguous).
-        /// </summary>
         public static bool IsSwapSafeMobileOther(string kind, Unit live = null)
         {
             if (IsStaticUnitKind(kind, live)) return false;
@@ -1030,13 +970,6 @@ namespace NOSaveSystem
                 || kind.IndexOf("Missile", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>
-        /// Despawn a live unit for Swap restore without leaving exploding wrecks.
-        /// Order (nuclear / UnloadInScene-compatible):
-        /// RemoveAircraft (player) -> DisableUnit -> hide -> clear customIDLookup -> UnregisterUnit
-        /// -> ServerObjectManager.Destroy(Identity|GO) -> Object.Destroy.
-        /// Destroy is deferred - caller MUST settle frames then VerifyDespawnOrForceDestroy before spawn.
-        /// </summary>
         public static bool DespawnUnitForSwap(Unit unit, Player localPlayer, StringBuilder plan)
         {
             if (unit == null) return false;
@@ -1045,7 +978,6 @@ namespace NOSaveSystem
             string label = "?";
             try { label = unit.UniqueName ?? unit.name ?? unit.GetType().Name; } catch { try { label = unit.GetType().Name; } catch { } }
 
-            // v0.9.2 hard guard: never despawn static map units (hangars/shelters/buildings/airbase parts).
             try
             {
                 if (IsStaticUnitKind(unit.GetType().Name, unit) || IsProtectedStaticName(label))
@@ -1059,7 +991,6 @@ namespace NOSaveSystem
 
             try
             {
-                // 1) Unbind player without ejection (SetAircraft would eject)
                 if (unit is Aircraft ac && localPlayer != null)
                 {
                     try
@@ -1079,7 +1010,6 @@ namespace NOSaveSystem
                 GameObject go = null;
                 try { go = unit.gameObject; } catch { }
 
-                // 2) DisableUnit FIRST - Networkdisabled + UnitDisabled -> RemoveFromGrid (HUD)
                 try
                 {
                     unit.DisableUnit();
@@ -1091,14 +1021,10 @@ namespace NOSaveSystem
                     NOSaveSystemPlugin.Log?.LogWarning("Despawn DisableUnit: " + ex.Message);
                 }
 
-                // 3) Hide mesh/colliders immediately (Destroy is end-of-frame / networked)
                 try { if (go != null) go.SetActive(false); } catch { }
 
-                // 4) Free UniqueName so respawn can reuse after settle
                 string uname = null;
                 try { uname = unit.UniqueName; } catch { }
-                // v0.9.1: only remove the entry if it still points at THIS unit. Unconditional Remove could
-                // unregister a freshly spawned replacement that already reclaimed the same UniqueName.
                 if (!string.IsNullOrEmpty(uname) && UnitRegistry.customIDLookup != null)
                 {
                     try
@@ -1109,10 +1035,8 @@ namespace NOSaveSystem
                     catch { }
                 }
 
-                // 5) Unregister from UnitRegistry lists
                 try { UnitRegistry.UnregisterUnit(unit); } catch { }
 
-                // 6) Mirage server destroy (UnloadInScene): prefer NetworkIdentity overload
                 bool somOk = false;
                 try
                 {
@@ -1140,7 +1064,6 @@ namespace NOSaveSystem
                     plan?.AppendLine("    DESPAWN SOM FAIL: " + ex.Message);
                 }
 
-                // 7) Local Object.Destroy (0 delay; still end-of-frame)
                 try
                 {
                     if (go != null)
@@ -1164,7 +1087,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>True if Unity object still exists (even if disabled/inactive). Used for ghost detection.</summary>
         public static bool IsUnitObjectPresent(Unit unit)
         {
             if (unit == null) return false;
@@ -1178,7 +1100,6 @@ namespace NOSaveSystem
             return true;
         }
 
-        /// <summary>True if unit is live, enabled, and active (not pending destroy / hidden).</summary>
         public static bool IsLiveActiveUnit(Unit unit)
         {
             if (!IsUnitObjectPresent(unit)) return false;
@@ -1192,10 +1113,6 @@ namespace NOSaveSystem
             return true;
         }
 
-        /// <summary>
-        /// After settle frames: confirm unit gone. If still present, nuclear Object.DestroyImmediate (SP/host).
-        /// Logs DESPAWN VERIFY ok / DESPAWN STILL ALIVE.
-        /// </summary>
         public static bool VerifyDespawnOrForceDestroy(Unit unit, string label, StringBuilder plan)
         {
             if (string.IsNullOrEmpty(label)) label = "?";
@@ -1210,7 +1127,6 @@ namespace NOSaveSystem
 
             try
             {
-                // Re-try network path
                 try
                 {
                     var nm = NetworkManagerNuclearOption.i;
@@ -1231,7 +1147,6 @@ namespace NOSaveSystem
                 {
                     string uname = null;
                     try { uname = unit.UniqueName; } catch { }
-                    // v0.9.1: only unregister if the entry still points at THIS unit (despawn race).
                     if (!string.IsNullOrEmpty(uname) && UnitRegistry.customIDLookup != null &&
                         UnitRegistry.customIDLookup.TryGetValue(uname, out var regU) && (regU == null || ReferenceEquals(regU, unit)))
                         UnitRegistry.customIDLookup.Remove(uname);
@@ -1267,11 +1182,6 @@ namespace NOSaveSystem
             return false;
         }
 
-        /// <summary>Force-remove UniqueName from customIDLookup if still reserved (by ghost or stale entry).</summary>
-        /// <summary>
-        /// After MissionReload despawn-all-defaults, clear any UniqueNames from the snapshot JSON
-        /// still reserved in customIDLookup so Swap spawn can reuse nosave_pid_* / saved names.
-        /// </summary>
         public static int ClearSavedUniqueNameReservations(MidMissionSnapshot snap, StringBuilder plan)
         {
             int n = 0;
@@ -1328,10 +1238,6 @@ namespace NOSaveSystem
             }
         }
 
-        /// <summary>
-        /// Best-effort spawn for non-aircraft/vehicle/ship saved units.
-        /// Uses concrete Saved* types + Spawner.SpawnSavedUnit. Host/server only.
-        /// </summary>
         public static bool TrySpawnOtherUnit(Spawner spawner, SavedUnitDto dto, StringBuilder plan)
         {
             if (spawner == null || dto == null) return false;
@@ -1378,7 +1284,6 @@ namespace NOSaveSystem
                         var v = new Vector3(dto.velocity.x, dto.velocity.y, dto.velocity.z);
                         speed = v.magnitude;
                     }
-                    // v0.9.6: native Spawner.SpawnSavedMissile with target/guiding owner + exact velocity, then motor/seeker state.
                     if (NoSaveV096.TrySpawnMissile(spawner, dto, gp, rot, plan)) return true;
                     saved = new SavedMissile(uname) { type = dto.type, faction = dto.faction, globalPosition = gp, rotation = rot, startingSpeed = speed };
                 }

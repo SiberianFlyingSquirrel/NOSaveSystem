@@ -1,12 +1,11 @@
-// The ONLY place the tests touch NOSaveSystem.ThrottleMath (frozen 1.0.0 API). Adjust here if the API changes.
 using NOSaveSystem;
 
 namespace NOSaveSystem.Tests
 {
     internal static class TM
     {
-        public const float BlendTime = ThrottleMath.BlendTime; // 0.75 s
-        public const float Slack = 0.02f;       // NoSaveVerify.ThrottleSlack (SKIP throttle-lower)
+        public const float BlendTime = ThrottleMath.BlendTime;
+        public const float Slack = 0.02f;
         public const float ProbeEps = 2e-4f, ProbeSigmaK = 4f, PassMinEps = 0.003f;
 
         public static float Map(float acc, bool neg, bool inv) => ThrottleMath.MapAccToThrottle(acc, neg, inv);

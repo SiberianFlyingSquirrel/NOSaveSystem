@@ -8,18 +8,10 @@ using NuclearOption.SavedMission.Objectives;
 
 namespace NOSaveSystem
 {
-    /// <summary>
-    /// v0.9.11: objective / UniqueName registry repair after a NOSave restore.
-    /// Spawner.TrySpawnShip/TrySpawnVehicle (used by NOSave respawn) skip Spawner.AfterSpawn, so the
-    /// respawned unit is never put into UnitRegistry.customIDLookup (host RegisterUnit doesn't do it).
-    /// DestroyUnitObjective.CheckComplete only completes when the name IS in customIDLookup with a
-    /// null/disabled unit, so Carrier Duel "Sink AssaultCarrier1/FleetCarrier1" stayed Running forever.
-    /// </summary>
     internal static class NoSaveV0911
     {
         private static void Log(string m) { NOSaveSystemPlugin.Log?.LogInfo("v0911: " + m); }
 
-        /// <summary>Mimics Spawner.AfterSpawn for a unit spawned via TrySpawnShip/TrySpawnVehicle.</summary>
         internal static void RegisterRespawned(SavedUnit saved, Unit unit)
         {
             if (unit == null) return;
@@ -29,7 +21,6 @@ namespace NOSaveSystem
             TryRegister(name, unit);
         }
 
-        /// <returns>true if newly registered.</returns>
         internal static bool TryRegister(string name, Unit unit)
         {
             if (string.IsNullOrEmpty(name) || unit == null || UnitRegistry.customIDLookup == null) return false;
@@ -38,8 +29,8 @@ namespace NOSaveSystem
                 if (UnitRegistry.customIDLookup.TryGetValue(name, out var cur))
                 {
                     if (ReferenceEquals(cur, unit)) return false;
-                    if (cur != null && !cur.disabled) return false; // a different live unit owns it; leave it
-                    UnitRegistry.customIDLookup[name] = unit;     // stale/destroyed holder -> replace
+                    if (cur != null && !cur.disabled) return false;
+                    UnitRegistry.customIDLookup[name] = unit;
                     return true;
                 }
                 UnitRegistry.RegisterCustomID(name, unit);
@@ -97,14 +88,6 @@ namespace NOSaveSystem
             try { return o.SavedObjective?.UniqueName ?? o.GetType().Name; } catch { return "?"; }
         }
 
-        /// <summary>
-        /// Call at the end of a restore (after respawns + objective status apply).
-        /// 1) every saved unit name with a live unit but no customIDLookup entry gets registered;
-        /// 2) every DestroyUnitObjective target is either bound to its live unit, or - if the unit is
-        ///    absent from the save (destroyed before F5) and no live unit holds the name - marked
-        ///    destroyed (customIDLookup[name] = null), exactly the state vanilla CheckComplete treats as destroyed,
-        ///    so MissionRunner.Update completes the objective on the next tick and fires its outcomes.
-        /// </summary>
         internal static void FixObjectiveRegistrations(MidMissionSnapshot snap, StringBuilder plan)
         {
             var reg = new List<string>();
@@ -145,7 +128,7 @@ namespace NOSaveSystem
                             try { if (holder.SavedUnit == null) holder.LinkSavedUnit(su); } catch { }
                             continue;
                         }
-                        if (present) continue; // already null = destroyed state
+                        if (present) continue;
                         var live = FindLiveByName(n);
                         if (live != null)
                         {
@@ -154,7 +137,7 @@ namespace NOSaveSystem
                         }
                         else if (!saved.Contains(n))
                         {
-                            UnitRegistry.customIDLookup[n] = null; // destroyed before save -> vanilla "destroyed" state
+                            UnitRegistry.customIDLookup[n] = null;
                             markedDestroyed.Add(n);
                         }
                         else
