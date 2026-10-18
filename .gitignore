@@ -1,0 +1,60 @@
+# build output (any level, incl. src/ and tests/)
+bin/
+obj/
+**/bin/
+**/obj/
+tests/bin/
+tests/obj/
+src/bin/
+src/obj/
+*.pdb
+*.dll
+*.exe
+*.zip
+*.tgz
+*.deps.json
+
+# reverse-engineering / decompiled game code - never commit
+decomp/
+d.zip
+inspect/
+overnight/
+_patcher/
+_re_probe/
+cecil*
+cecil_dump_*.txt
+type_hits_*.txt
+*.il
+*dump*.txt
+
+# game reference assemblies (never commit game files)
+lib/
+libs/
+refs/
+ref/
+Managed/
+
+# local machine settings (GameDir / PluginSrc overrides)
+local.props.user
+*.user
+.vs/
+.vscode/
+*.suo
+
+# backups / scratch
+*.bak*
+*_bak_*
+*.new
+*.new*
+*.log
+old/
+
+# runtime data
+saves/
+*.json.deep
+*.cfg
+
+# media
+*.png
+*.jpg
+*.mp4

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Synthetic throttle-hold test harness for NOSaveSystem. NOT part of the plugin build or the release zip.
+    Plain console runner, no NuGet packages (builds offline). Run command: see README "Tests".
+    The Unity-free plugin file NoSaveThrottleMath.cs is LINKED (not copied) from $(PluginSrc), default ../src.
+    Override PluginSrc with -p:PluginSrc=..., the PluginSrc environment variable, or ../local.props.user
+    (gitignored; see ../local.props.example).
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)..\local.props.user" Condition="Exists('$(MSBuildThisFileDirectory)..\local.props.user')" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>NOSaveSystem.Tests</AssemblyName>
+    <RootNamespace>NOSaveSystem.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DebugType>none</DebugType>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+    <PluginSrc Condition="'$(PluginSrc)'==''">$(MSBuildThisFileDirectory)..\src</PluginSrc>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="$(PluginSrc)\NoSaveThrottleMath.cs" Link="Linked\NoSaveThrottleMath.cs" />
+  </ItemGroup>
+</Project>

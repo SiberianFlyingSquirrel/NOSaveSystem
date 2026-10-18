@@ -1,0 +1,12 @@
+<!--
+  Optional local overrides for the TEST project only (tests/NOSaveSystem.Tests.csproj imports ../local.props.user).
+  Copy this file to "local.props.user" (gitignored, never commit it) and adjust.
+  The plugin build takes GameDir on the command line: dotnet build ... -p:GameDir="<your Nuclear Option folder>"
+  (or set the GameDir environment variable).
+-->
+<Project>
+  <PropertyGroup>
+    <!-- Folder containing NoSaveThrottleMath.cs (default: ../src) -->
+    <!-- <PluginSrc>D:\path\to\NOSaveSystem\src</PluginSrc> -->
+  </PropertyGroup>
+</Project>
