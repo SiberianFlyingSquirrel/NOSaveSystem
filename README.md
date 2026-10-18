@@ -46,8 +46,8 @@ All save/load/delete actions and hotkeys are no-ops, and all NOSave UI is hidden
 
 ### What is restored in flight
 
-- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s). The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. Power never dips below the saved value unless you pull the throttle back.
-- An engine that was destroyed when you saved stays dead from the first frame (no spool-up and die); the other engines keep their full power.
+- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s). The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. 
+- An engine that was destroyed when you saved stays dead from the first frame (no spool-up and die), the other engines keep their full power.
 - Landing gear and flaps that were moving when you saved continue moving from the same point.
 - After every load a `NOSAVE-VERIFY ... VERIFY PASS n/n` (or `VERIFY FAIL k/n`) line in the BepInEx log compares the live game against the save, field by field.
 - The BepInEx log also shows a `NOSAVE-ENG ... RESULT PASS/FAIL/SKIP` line per aircraft and a `FINGERPRINT` line (version, build, SHA-256) at startup.
@@ -121,6 +121,10 @@ MIT (see `LICENSE`). Covers this mod's own code only; no game assets or game cod
 ## Built with AI assistance
 
 This mod was developed with the help of AI coding tools.
+
+## Bugs
+
+Please report any bugs to me so they can be squashed.
 
 ## Disclaimer
 
