@@ -1,13 +1,13 @@
 # NOSaveSystem 1.0.1 - release notes
 
-Version **1.0.1**, build **1**. Log fingerprint: `FINGERPRINT name=NOSaveSystem version=1.0.1 build=1 ... kind=release (portable default SaveDirectory)`.
+Version **1.0.1**, build **2**. Log fingerprint: `FINGERPRINT name=NOSaveSystem version=1.0.1 build=2 ... kind=release (portable default SaveDirectory)`.
 Singleplayer only. Requires BepInEx 5.4.23.x.
 
 ## Checksums (SHA-256)
 
 | File | Size (bytes) | SHA-256 |
 |---|---|---|
-| `BepInEx/plugins/NOSaveSystem.dll` | 425984 | `2550E0AAB4BB108BC10ED949511C29D4B66E6FC12136AEEE03D178A7AEDFD469` |
+| `BepInEx/plugins/NOSaveSystem.dll` | 427008 | `E435BB8AC31B0BC029736632944003AB64B61B239CB1965FA543F9947621963F` |
 
 Verify with `Get-FileHash <file> -Algorithm SHA256` (see README, "Verifying"). The DLL is a deterministic build (`-c Release -p:DebugType=none -p:Deterministic=true -p:PathMap=<projdir>=.`), so building `src/` per the README reproduces the same DLL hash.
 
@@ -17,8 +17,10 @@ Verify with `Get-FileHash <file> -Algorithm SHA256` (see README, "Verifying"). T
 - Fix (N1): the main-menu SAVE MENU button no longer shifts the game's own main-menu buttons a second time when the button is re-created under the same parent (after an external destroy, or when a fresh clone is rejected). The previous shift is undone before the state is reset, and undoing is idempotent and safe when sibling buttons were destroyed.
 - Fix (N2): every restore (F6 / SAVE MENU LOAD, main-menu Continue / CONTINUE (LATEST), Swap fallback, legacy host Continue) now starts a new restore sequence, and the post-load throttle FOLLOW check (with its 1 s raise-only STUCK throttle fix) runs once per aircraft per restore. Before, a 2nd or later Swap-fallback load on the same aircraft could skip it.
 - Config: the `AllowRespawnMissing` description no longer says "Multiplayer-safe: only when IsServer"; it now states that the mod is singleplayer-only.
-- Build: `src/NOSaveSystem.csproj` sets `IncludeSourceRevisionInInformationalVersion=false`, so building from a git clone gives the same DLL as building from a plain source copy (the .NET 8 SDK otherwise appends `+<commit>` to the informational version inside the DLL).
-- Tests: new FOLLOW once-per-restore key tests (U11).
+- Build: `src/NOSaveSystem.csproj` sets `IncludeSourceRevisionInInformationalVersion=false`, so building from a git clone gives the same DLL as building from a plain source copy (the .NET 8 SDK otherwise appends `+<commit>` to the informational version inside the DLL). Fixed: with 1.0.0 a clone build did not reproduce the published hash.
+- Fix: a new restore of an aircraft whose engine hold had already ended (or been released) in an earlier restore now re-arms the engine hold and the throttle FOLLOW check for that restore, instead of logging `LATE-WRITE blocked`. Late writes inside the same restore stay blocked. An older restore's still-running lock on that aircraft is retired first (log: `RE-ARM`).
+- Restore plan file: the header line is now `F6 restore plan mode=...` (no stale version label).
+- Tests: new FOLLOW once-per-restore key tests (U11) and engine re-arm decision tests (U12).
 
 ## Zip contents
 
@@ -40,4 +42,4 @@ Verify with `Get-FileHash <file> -Algorithm SHA256` (see README, "Verifying"). T
 
 ## Provenance
 
-Branch `1.0.1` of this repository, based on tag `v1.0.0` (commit `4ff8518`): one commit that only removes comments, then one commit with the fixes above and the version bump.
+Branch `1.0.1` of this repository, based on tag `v1.0.0` (commit `4ff8518`): one commit that only removes comments, one commit with the first fixes and the version bump (build 1), and one commit with the engine re-arm fix, the plan header label and build 2.

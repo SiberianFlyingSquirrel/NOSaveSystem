@@ -394,7 +394,7 @@ namespace NOSaveSystem
 
         private sealed class Lock
         {
-            public Aircraft ac; public SavedAircraftDto dto; public string label; public bool player; public int gen;
+            public Aircraft ac; public SavedAircraftDto dto; public string label; public bool player, retired; public int gen, seq;
             public List<CompVals> comps; public MonoBehaviour[] engines;
             public float t; public bool released, done; public Phase phase = Phase.Forcing;
             public int holdSteps, reforceLeft = InitialForceSteps, probeRun, cleanRun, bestClean, probes, probeFails, stepCount;
@@ -421,7 +421,7 @@ namespace NOSaveSystem
 
         private static readonly Dictionary<MonoBehaviour, CompVals> _byComp = new Dictionary<MonoBehaviour, CompVals>();
         private static readonly Dictionary<Aircraft, Lock> _byAc = new Dictionary<Aircraft, Lock>();
-        private static readonly HashSet<Aircraft> _expired = new HashSet<Aircraft>();
+        private static readonly Dictionary<Aircraft, int> _expired = new Dictionary<Aircraft, int>();
         private static int _gen;
         internal static int Gen { get { return _gen; } }
         internal static bool AnyActive;
@@ -442,7 +442,7 @@ namespace NOSaveSystem
             _pruneComp.Clear(); _pruneAc.Clear();
             foreach (var k in _byComp.Keys) if (k == null) _pruneComp.Add(k);
             foreach (var k in _pruneComp) _byComp.Remove(k);
-            foreach (var k in _expired) if (k == null) _pruneAc.Add(k);
+            foreach (var k in _expired.Keys) if (k == null) _pruneAc.Add(k);
             foreach (var k in _pruneAc) _expired.Remove(k);
             _pruneAc.Clear();
             foreach (var kv in _byAc) if (kv.Key == null) _pruneAc.Add(kv.Key);
@@ -481,17 +481,27 @@ namespace NOSaveSystem
             }
             Prune();
             string lbl = label ?? SafeName(ac);
-            if (_expired.Contains(ac)) { Eng("LATE-WRITE blocked source=" + source + " aircraft=" + lbl + " (post-load window already ended - engine state left to the sim)"); return; }
-            if (_byAc.TryGetValue(ac, out var existing))
+            int seq = NoSaveThrottleFollow.RestoreSeq;
+            bool expired = _expired.TryGetValue(ac, out var expSeq);
+            bool hasLock = _byAc.TryGetValue(ac, out var existing);
+            var rearm = ThrottleMath.EngineReArmDecision(expired, expSeq, hasLock, hasLock && existing.released, hasLock ? existing.seq : 0, seq);
+            if (rearm == EngineReArm.BlockExpired) { Eng("LATE-WRITE blocked source=" + source + " aircraft=" + lbl + " (post-load window already ended - engine state left to the sim)"); return; }
+            if (rearm == EngineReArm.BlockReleased) { Eng("LATE-WRITE blocked source=" + source + " aircraft=" + lbl + " t=" + N(existing.t) + " (hold already released)"); return; }
+            if (rearm == EngineReArm.KeepExisting)
             {
-                if (existing.released) { Eng("LATE-WRITE blocked source=" + source + " aircraft=" + lbl + " t=" + N(existing.t) + " (hold already released)"); return; }
                 if (label != null) existing.label = label;
                 ReevalPlayer(existing, source);
                 return;
             }
+            if (rearm == EngineReArm.RetireAndProceed || rearm == EngineReArm.ClearExpiryAndProceed)
+            {
+                if (hasLock) Retire(existing);
+                _expired.Remove(ac);
+                Eng(lbl + " RE-ARM source=" + source + " (new restore seq=" + seq + ", previous " + (hasLock ? "lock seq=" + existing.seq : "expiry seq=" + expSeq) + ")");
+            }
             int mismatch; float savedRpm;
             var comps = Parse(ac, dto, out mismatch, out savedRpm);
-            var L = new Lock { ac = ac, dto = dto, label = lbl, player = IsPlayer(ac), comps = comps, gen = _gen };
+            var L = new Lock { ac = ac, dto = dto, label = lbl, player = IsPlayer(ac), comps = comps, gen = _gen, seq = seq };
             var eng = new List<MonoBehaviour>();
             foreach (var cv in comps) { cv.L = L; if (!cv.isTransmission) eng.Add(cv.mb); }
             L.engines = eng.ToArray();
@@ -1129,7 +1139,7 @@ namespace NOSaveSystem
 
         private static void OnReleased(Lock L)
         {
-            if (!L.player || L.followStarted) return;
+            if (!L.player || L.followStarted || L.retired) return;
             L.followStarted = true;
             try { NoSaveThrottleFollow.StartOnce(L.ac, L.label, L.gen, "release(" + (L.endReason ?? "?") + ")"); } catch (Exception ex) { Log("follow start FAIL " + ex.Message); }
         }
@@ -1374,19 +1384,28 @@ namespace NOSaveSystem
 
         private static void Finish(Lock L)
         {
+            if (L.retired) return;
             if (L.player && !L.followStarted && Alive(L.ac)) OnReleased(L);
             L.done = true; L.released = true;
             foreach (var cv in L.comps) if (cv.mb != null) _byComp.Remove(cv.mb);
             _byAc.Remove(L.ac);
-            if (L.ac != null) _expired.Add(L.ac);
+            if (L.ac != null) _expired[L.ac] = L.seq;
             Prune();
+        }
+
+        private static void Retire(Lock L)
+        {
+            L.retired = true; L.done = true; L.released = true;
+            foreach (var cv in L.comps) if (cv.mb != null && _byComp.TryGetValue(cv.mb, out var cur) && ReferenceEquals(cur, cv)) _byComp.Remove(cv.mb);
+            _byAc.Remove(L.ac);
+            AnyActive = _byAc.Count > 0;
         }
 
         internal static void OnResume(Aircraft ac, string source)
         {
             string lbl = SafeName(ac);
             if (_byAc.TryGetValue(ac, out var L) && !L.released) { if (L.player) Eng(lbl + " resume (" + source + ") inside hold phase=" + L.phase + " t=" + N(L.t) + " - no extra write needed"); }
-            else if (_byAc.ContainsKey(ac) || _expired.Contains(ac)) Eng("LATE-WRITE blocked source=" + source + " aircraft=" + lbl + " (resume outside the post-load window: no engine write)");
+            else if (_byAc.ContainsKey(ac) || _expired.ContainsKey(ac)) Eng("LATE-WRITE blocked source=" + source + " aircraft=" + lbl + " (resume outside the post-load window: no engine write)");
         }
 
         internal static void Hold(Aircraft ac, SavedAircraftDto dto, string label, float holdSeconds) { ApplyEngines(ac, dto, label, "hold"); }

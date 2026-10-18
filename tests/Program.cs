@@ -26,7 +26,7 @@ namespace NOSaveSystem.Tests
             Console.WriteLine("NOSaveSystem.Tests - ThrottleMath linked from plugin source");
             Console.WriteLine("--- invariants");
             HoldOutputIsSaved(); RoundTrip(); BlendShape(); BlendFloor(); ThrottleLower(); KeyboardRamp(); Seed();
-            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey();
+            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey(); EngineReArmKey();
             Console.WriteLine("--- synthetic GameAccStep sequences (hold 2 s, probe 0.5 s, blend 0.75 s, released 0.5 s)");
             foreach (int fps in Fps) foreach (var sc in Scenarios()) Run(sc, fps);
             Console.WriteLine("--- total: {0} PASS, {1} FAIL, {2} SKIP", _pass, _fail, _skip);
@@ -196,6 +196,21 @@ namespace NOSaveSystem.Tests
             var fresh = TM.NewFollowOnce();
             bool zero = fresh(0, int.MinValue, 0);
             Check("U11 FOLLOW once: fresh gate accepts any first key", zero, "first(0,min,0)=" + zero);
+        }
+
+        private static void EngineReArmKey()
+        {
+            bool sameBlocked = TM.ReArm(true, 3, false, false, 0, 3) == EngineReArm.BlockExpired
+                && TM.ReArm(false, 0, true, true, 3, 3) == EngineReArm.BlockReleased
+                && TM.ReArm(false, 0, true, false, 3, 3) == EngineReArm.KeepExisting
+                && TM.ReArm(true, 3, true, false, 4, 3) == EngineReArm.BlockExpired;
+            Check("U12 engine re-arm: same restore seq stays blocked / kept", sameBlocked, "");
+            bool newSeq = TM.ReArm(true, 3, false, false, 0, 4) == EngineReArm.ClearExpiryAndProceed
+                && TM.ReArm(false, 0, true, true, 3, 4) == EngineReArm.RetireAndProceed
+                && TM.ReArm(false, 0, true, false, 3, 4) == EngineReArm.RetireAndProceed
+                && TM.ReArm(true, 2, true, true, 3, 4) == EngineReArm.RetireAndProceed;
+            Check("U12 engine re-arm: new restore seq re-arms (expiry cleared / old lock retired)", newSeq, "");
+            Check("U12 engine re-arm: unknown aircraft proceeds", TM.ReArm(false, 0, false, false, 0, 9) == EngineReArm.Proceed, "");
         }
 
         private static void Classifier()

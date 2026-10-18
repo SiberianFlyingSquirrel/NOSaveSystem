@@ -4,6 +4,8 @@ namespace NOSaveSystem
 {
     public enum ThrottlePhase { Hold = 0, Probe = 1, Blend = 2, Released = 3 }
 
+    public enum EngineReArm { Proceed = 0, BlockExpired = 1, BlockReleased = 2, KeepExisting = 3, RetireAndProceed = 4, ClearExpiryAndProceed = 5 }
+
     public static class ThrottleMath
     {
         public const float BlendTime = 0.75f;
@@ -146,6 +148,17 @@ namespace NOSaveSystem
             }
             dipRun = 0;
             return false;
+        }
+
+        public static EngineReArm EngineReArmDecision(bool expired, int expiredSeq, bool hasLock, bool lockReleased, int lockSeq, int seq)
+        {
+            if (expired && expiredSeq == seq) return EngineReArm.BlockExpired;
+            if (hasLock)
+            {
+                if (lockSeq != seq) return EngineReArm.RetireAndProceed;
+                return lockReleased ? EngineReArm.BlockReleased : EngineReArm.KeepExisting;
+            }
+            return expired ? EngineReArm.ClearExpiryAndProceed : EngineReArm.Proceed;
         }
 
         public sealed class OnceGate

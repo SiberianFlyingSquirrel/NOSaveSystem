@@ -23,6 +23,7 @@ namespace NOSaveSystem.Tests
         public static float PassEps(float sigma) => ThrottleMath.PassEps(sigma, PassMinEps);
         public static bool DipStep(float ratio, float passEps, ref int run, int failSteps, ref bool failed) => ThrottleMath.DipStep(ratio, passEps, ref run, failSteps, ref failed);
         public static System.Func<int, int, int, bool> NewFollowOnce() { var g = new ThrottleMath.OnceGate(); return g.TryClaim; }
+        public static EngineReArm ReArm(bool expired, int expiredSeq, bool hasLock, bool lockReleased, int lockSeq, int seq) => ThrottleMath.EngineReArmDecision(expired, expiredSeq, hasLock, lockReleased, lockSeq, seq);
         public static string Classify(float[] raws, string lastType)
         {
             var c = new ThrottleMath.SrcClassifier();

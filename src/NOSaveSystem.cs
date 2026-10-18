@@ -21,7 +21,7 @@ namespace NOSaveSystem
         public const string PLUGIN_GUID = "com.lorenzo.nosavesystem";
         public const string PLUGIN_NAME = "NOSaveSystem";
         public const string PLUGIN_VERSION = "1.0.1";
-        public const int BUILD_ID = 1;
+        public const int BUILD_ID = 2;
 
         internal static ManualLogSource Log;
         internal static NOSaveSystemPlugin Instance;
@@ -1098,7 +1098,7 @@ namespace NOSaveSystem
             int teleported = 0, missing = 0, spawned = 0, failed = 0, rebound = 0, economy = 0;
             int playerSpawnedOnContinue = 0, despawned = 0, swapped = 0, skippedStatic = 0;
             var plan = new StringBuilder();
-            plan.AppendLine("F6 restore plan v0.8.5 mode=" + (swapMode ? "Swap" : "Teleport") + " from " + path);
+            plan.AppendLine("F6 restore plan mode=" + (swapMode ? "Swap" : "Teleport") + " from " + path);
 
             Spawner spawner = null;
             try { spawner = Spawner.i; } catch { }
