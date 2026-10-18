@@ -10,7 +10,7 @@ Mid-mission save/load for Nuclear Option. Saves a snapshot of the running missio
 
 ## Install
 
-[Download the latest release](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/latest) and grab the `.zip` under Assets. Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
+[Download NOSaveSystem](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/download/v1.0.0/NOSaveSystem-1.0.0.zip). Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
 ## Usage
 
 The only NOSave UI is the **SAVE MENU** (pause menu and main menu). 
