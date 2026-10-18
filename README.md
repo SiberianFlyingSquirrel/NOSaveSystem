@@ -10,7 +10,7 @@ Mid-mission save/load for Nuclear Option. Saves a snapshot of the running missio
 
 ## Install
 
-[Download the latest release](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/latest) and grab the `.zip` under Assets. Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
+[Download NOSaveSystem](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/download/v1.0.1/NOSaveSystem-1.0.1.zip). Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
 ## Usage
 
 The only NOSave UI is the **SAVE MENU** (pause menu and main menu). 
@@ -104,7 +104,7 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
    [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=4 config=Release sha256=c99db776471b2c8bbe9b03c2cac7f1ee2893b2d30698569a9aa0e6e55253d212 kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
    ```
 
-   Check `version=1.0.0 build=1`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
+   Check `version=1.0.1 build=4`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
 
 2. **DLL hash:** in PowerShell, in the game folder:
 
