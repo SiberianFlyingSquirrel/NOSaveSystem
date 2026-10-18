@@ -101,7 +101,7 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
 1. **Log fingerprint:** start the game and open `BepInEx\LogOutput.log`. The `FINGERPRINT` line of this release reads (`editorFlag` depends on the game build):
 
    ```
-   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=3 config=Release sha256=76a60e0c9d9b6ddd1ac9b87100af301321b803bc5cb30143170c58bad7b1c90e kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
+   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=4 config=Release sha256=c99db776471b2c8bbe9b03c2cac7f1ee2893b2d30698569a9aa0e6e55253d212 kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
    ```
 
    Check `version=1.0.0 build=1`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
@@ -112,7 +112,7 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
    Get-FileHash .\BepInEx\plugins\NOSaveSystem.dll -Algorithm SHA256
    ```
 
-   Expected: `76A60E0C9D9B6DDD1AC9B87100AF301321B803BC5CB30143170C58BAD7B1C90E` (also listed in `RELEASE_NOTES.md`).
+   Expected: `C99DB776471B2C8BBE9B03C2CAC7F1EE2893B2D30698569A9AA0E6E55253D212` (also listed in `RELEASE_NOTES.md`).
 
 ## License
 

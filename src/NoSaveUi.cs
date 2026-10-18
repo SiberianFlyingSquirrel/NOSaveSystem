@@ -80,8 +80,7 @@ namespace NOSaveSystem
 
         private static bool IsMainMenu()
         {
-            try { return GameManager.gameState == GameState.Menu; }
-            catch { return false; }
+            return NOSaveSystemPlugin.AtMainMenu();
         }
 
         private static string _metaPath, _metaName;
@@ -244,7 +243,7 @@ namespace NOSaveSystem
                     bool running = false;
                     bool atMenu = false;
                     try { running = MissionManager.IsRunning; } catch { }
-                    try { atMenu = GameManager.gameState == GameState.Menu; } catch { }
+                    atMenu = NOSaveSystemPlugin.AtMainMenu();
                     string fail = MissionReload.LastFailReason ?? "unknown";
                     bool hostStarted = MissionReload.LastHostStarted;
                     NOSaveSystemPlugin.Log?.LogWarning(

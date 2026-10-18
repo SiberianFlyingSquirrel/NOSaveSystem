@@ -21,7 +21,7 @@ namespace NOSaveSystem
         public const string PLUGIN_GUID = "com.lorenzo.nosavesystem";
         public const string PLUGIN_NAME = "NOSaveSystem";
         public const string PLUGIN_VERSION = "1.0.1";
-        public const int BUILD_ID = 3;
+        public const int BUILD_ID = 4;
 
         internal static ManualLogSource Log;
         internal static NOSaveSystemPlugin Instance;
@@ -191,11 +191,22 @@ namespace NOSaveSystem
             else { LastLoadedPath = null; RestoreMidMissionSnapshot(); }
         }
 
+        internal static bool AtMainMenu()
+        {
+            try
+            {
+                var gs = GameManager.gameState;
+                if (gs == GameState.Menu) return true;
+                return gs == GameState.Uninitialized && MainMenu.State == MainMenu.LoadingState.Loaded && NoSaveV0100.MainMenuAlive;
+            }
+            catch { return false; }
+        }
+
         internal static bool ContinueAllowed()
         {
             try
             {
-                if (GameManager.gameState != GameState.Menu) return false;
+                if (!AtMainMenu()) return false;
                 if (PlayingFromEditor()) return false;
                 var nm = NetworkManagerNuclearOption.i;
                 if (nm != null && nm.Server != null && nm.Server.Active) return false;
@@ -438,7 +449,7 @@ namespace NOSaveSystem
                 try
                 {
                     if (!GateSp("F8 Continue hotkey (main menu only)", true)) return;
-                    if (GameManager.gameState == GameState.Menu && !IsBusyOrCoolingDown)
+                    if (AtMainMenu() && !IsBusyOrCoolingDown)
                         StartCoroutine(NoSaveUi.ContinueAfterRebootCoroutine());
                 }
                 catch (Exception ex) { Log.LogError("Continue hotkey failed: " + ex); }
@@ -972,7 +983,7 @@ namespace NOSaveSystem
                 {
                     bool mrOk = false;
                     bool alreadyMenu = false;
-                    try { alreadyMenu = GameManager.gameState == GameState.Menu; } catch { }
+                    alreadyMenu = AtMainMenu();
                     Log.LogInfo("F6/Load LoadMode=MissionReload alreadyMenu=" + alreadyMenu);
                     yield return MissionReload.RunMissionReloadCo(alreadyMenu, ok => { mrOk = ok; });
                     if (mrOk) yield break;

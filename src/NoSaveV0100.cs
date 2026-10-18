@@ -311,6 +311,11 @@ namespace NOSaveSystem
             get { try { return _mmPanel != null && _mmPanel.gameObject.activeInHierarchy; } catch { return false; } }
         }
 
+        internal static bool MainMenuAlive
+        {
+            get { try { return _mmCached != null && _mmCached.isActiveAndEnabled; } catch { return false; } }
+        }
+
         internal static void OnMainMenuStart(MainMenu mm, string src) { _mmCached = mm; _mmFails = 0; _mmFailAt = -100f; PollMain(src); }
 
         private static Button MainTemplate(MainMenu mm)
@@ -322,9 +327,15 @@ namespace NOSaveSystem
         {
             try
             {
-                bool atMenu = false;
-                try { atMenu = GameManager.gameState == GameState.Menu; } catch { }
-                if (!atMenu) return;
+                if (!NOSaveSystemPlugin.AtMainMenu())
+                {
+                    if (_mmCached != null)
+                    {
+                        string why = "gameState=" + GameManager.gameState + " mainMenuState=" + MainMenu.State;
+                        if (why != _mmLastHidden) { _mmLastHidden = why; Log("main-menu SAVE MENU button waiting (" + why + ") src=" + src); }
+                    }
+                    return;
+                }
                 var mm = _mmCached;
                 if (mm == null)
                 {
