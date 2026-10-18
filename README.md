@@ -13,7 +13,7 @@ Mid-mission save/load for Nuclear Option. Saves a snapshot of the running missio
 Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
 ## Usage
 
-The only NOSave UI is the **SAVE MENU** (pause menu and main menu). v0.11.0 removed the old top-left save panel and the old main-menu Continue box.
+The only NOSave UI is the **SAVE MENU** (pause menu and main menu). 
 
 ### In a mission (pause menu)
 
@@ -46,7 +46,7 @@ All save/load/delete actions and hotkeys are no-ops, and all NOSave UI is hidden
 
 ### What is restored in flight
 
-- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s), then control is handed back. The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. Power never dips below the saved value unless you pull the throttle back.
+- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s). The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. Power never dips below the saved value unless you pull the throttle back.
 - An engine that was destroyed when you saved stays dead from the first frame (no spool-up and die); the other engines keep their full power.
 - Landing gear and flaps that were moving when you saved continue moving from the same point.
 - After every load a `NOSAVE-VERIFY ... VERIFY PASS n/n` (or `VERIFY FAIL k/n`) line in the BepInEx log compares the live game against the save, field by field.
