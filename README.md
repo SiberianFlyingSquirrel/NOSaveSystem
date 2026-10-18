@@ -10,10 +10,10 @@ Mid-mission save/load for Nuclear Option. Saves a snapshot of the running missio
 
 ## Install
 
-Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
+[Download the latest release](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/latest) and grab the `.zip` under Assets. Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
 ## Usage
 
-The only NOSave UI is the **SAVE MENU** (pause menu and main menu). v0.11.0 removed the old top-left save panel and the old main-menu Continue box.
+The only NOSave UI is the **SAVE MENU** (pause menu and main menu). 
 
 ### In a mission (pause menu)
 
@@ -46,8 +46,8 @@ All save/load/delete actions and hotkeys are no-ops, and all NOSave UI is hidden
 
 ### What is restored in flight
 
-- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s), then control is handed back. The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. Power never dips below the saved value unless you pull the throttle back.
-- An engine that was destroyed when you saved stays dead from the first frame (no spool-up and die); the other engines keep their full power.
+- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s). The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. 
+- An engine that was destroyed when you saved stays dead from the first frame (no spool-up and die), the other engines keep their full power.
 - Landing gear and flaps that were moving when you saved continue moving from the same point.
 - After every load a `NOSAVE-VERIFY ... VERIFY PASS n/n` (or `VERIFY FAIL k/n`) line in the BepInEx log compares the live game against the save, field by field.
 - The BepInEx log also shows a `NOSAVE-ENG ... RESULT PASS/FAIL/SKIP` line per aircraft and a `FINGERPRINT` line (version, build, SHA-256) at startup.
@@ -101,10 +101,10 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
 1. **Log fingerprint:** start the game and open `BepInEx\LogOutput.log`. The `FINGERPRINT` line of this release reads (`editorFlag` depends on the game build):
 
    ```
-   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=2 config=Release sha256=<release DLL SHA-256, lowercase> kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
+   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=3 config=Release sha256=76a60e0c9d9b6ddd1ac9b87100af301321b803bc5cb30143170c58bad7b1c90e kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
    ```
 
-   Check `version=1.0.1 build=2`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded; it must match the DLL SHA-256 in `RELEASE_NOTES.md`).
+   Check `version=1.0.0 build=1`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
 
 2. **DLL hash:** in PowerShell, in the game folder:
 
@@ -112,7 +112,7 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
    Get-FileHash .\BepInEx\plugins\NOSaveSystem.dll -Algorithm SHA256
    ```
 
-   Expected: the `BepInEx/plugins/NOSaveSystem.dll` SHA-256 listed in `RELEASE_NOTES.md`.
+   Expected: `76A60E0C9D9B6DDD1AC9B87100AF301321B803BC5CB30143170C58BAD7B1C90E` (also listed in `RELEASE_NOTES.md`).
 
 ## License
 
@@ -121,6 +121,10 @@ MIT (see `LICENSE`). Covers this mod's own code only; no game assets or game cod
 ## Built with AI assistance
 
 This mod was developed with the help of AI coding tools.
+
+## Bugs
+
+Please report any bugs to me so they can be squashed.
 
 ## Disclaimer
 
