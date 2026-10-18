@@ -1,5 +1,7 @@
 # NOSaveSystem v1.0.0
 
+**[Download the latest release](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/latest)** (grab the `.zip` under Assets)
+
 **Singleplayer only - automatically inactive in multiplayer**
 
 Mid-mission save/load for Nuclear Option. Saves a snapshot of the running mission (units, positions, velocities, fuel, damage, loadouts, faction funds/score, escalation, objective state) and restores it later, including after a game restart.
