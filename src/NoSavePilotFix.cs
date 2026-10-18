@@ -203,6 +203,7 @@ namespace NOSaveSystem
 
         internal static IEnumerator Run(Aircraft ac, SavedAircraftDto dto)
         {
+            int runSeq = NoSaveThrottleFollow.RestoreSeq;
             string label = "?";
             try { label = ac.UniqueName ?? ac.name; } catch { }
             try
@@ -230,6 +231,8 @@ namespace NOSaveSystem
             }
             if (p == null || p.currentState == null) { Log(label + " pilot/state not ready after 5s - skipped"); NoSaveWait.Timeout("pilot-init " + label, 5f, "pilot fix skipped (engine hold armed from the spawn path only)"); yield break; }
             yield return null;
+            int nowSeq = NoSaveThrottleFollow.RestoreSeq;
+            if (!ThrottleMath.SeqStillCurrent(runSeq, nowSeq)) { Log("PilotFix stale restore seq=" + runSeq + " now=" + nowSeq + ", skip " + label); yield break; }
             try { NoSaveEngineGear.ApplyEngines(ac, dto, label, "PilotFix.init"); } catch (Exception ex) { Log(label + " engines FAIL " + ex.Message); }
             try { NoSaveEngineGear.ApplyGear(ac, dto, label); } catch (Exception ex) { Log(label + " gear FAIL " + ex.Message); }
 

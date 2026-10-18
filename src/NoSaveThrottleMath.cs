@@ -161,6 +161,8 @@ namespace NOSaveSystem
             return expired ? EngineReArm.ClearExpiryAndProceed : EngineReArm.Proceed;
         }
 
+        public static bool SeqStillCurrent(int captured, int now) { return captured == now; }
+
         public sealed class OnceGate
         {
             private bool _any;

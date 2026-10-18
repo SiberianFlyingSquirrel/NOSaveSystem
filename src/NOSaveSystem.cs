@@ -21,7 +21,7 @@ namespace NOSaveSystem
         public const string PLUGIN_GUID = "com.lorenzo.nosavesystem";
         public const string PLUGIN_NAME = "NOSaveSystem";
         public const string PLUGIN_VERSION = "1.0.1";
-        public const int BUILD_ID = 2;
+        public const int BUILD_ID = 3;
 
         internal static ManualLogSource Log;
         internal static NOSaveSystemPlugin Instance;

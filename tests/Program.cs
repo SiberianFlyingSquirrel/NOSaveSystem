@@ -26,7 +26,7 @@ namespace NOSaveSystem.Tests
             Console.WriteLine("NOSaveSystem.Tests - ThrottleMath linked from plugin source");
             Console.WriteLine("--- invariants");
             HoldOutputIsSaved(); RoundTrip(); BlendShape(); BlendFloor(); ThrottleLower(); KeyboardRamp(); Seed();
-            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey(); EngineReArmKey();
+            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey(); EngineReArmKey(); PilotFixSeq();
             Console.WriteLine("--- synthetic GameAccStep sequences (hold 2 s, probe 0.5 s, blend 0.75 s, released 0.5 s)");
             foreach (int fps in Fps) foreach (var sc in Scenarios()) Run(sc, fps);
             Console.WriteLine("--- total: {0} PASS, {1} FAIL, {2} SKIP", _pass, _fail, _skip);
@@ -211,6 +211,13 @@ namespace NOSaveSystem.Tests
                 && TM.ReArm(true, 2, true, true, 3, 4) == EngineReArm.RetireAndProceed;
             Check("U12 engine re-arm: new restore seq re-arms (expiry cleared / old lock retired)", newSeq, "");
             Check("U12 engine re-arm: unknown aircraft proceeds", TM.ReArm(false, 0, false, false, 0, 9) == EngineReArm.Proceed, "");
+        }
+
+        private static void PilotFixSeq()
+        {
+            int a = 5;
+            bool same = TM.SeqCurrent(a, 5), staleB = !TM.SeqCurrent(a, 6), staleWrap = !TM.SeqCurrent(int.MaxValue, int.MinValue);
+            Check("U13 PilotFix seq: same restore applies, newer restore skips stale run", same && staleB && staleWrap, "same=" + same + " stale=" + staleB + " wrap=" + staleWrap);
         }
 
         private static void Classifier()
