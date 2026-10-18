@@ -1144,14 +1144,16 @@ namespace NOSaveSystem
         internal const int StuckFrames = 10;
         internal const int MaxFrames = 600;
 
-        private static int _onceAc, _onceGen = int.MinValue;
+        private static readonly ThrottleMath.OnceGate _once = new ThrottleMath.OnceGate();
+        private static int _restoreSeq;
+        internal static int RestoreSeq { get { return _restoreSeq; } }
+        internal static void BeginRestore() { _restoreSeq++; }
         internal static void StartOnce(Aircraft ac, string label, int lockGen, string path)
         {
             if (ac == null) return;
             int id; try { id = ac.GetInstanceID(); } catch { return; }
-            if (id == _onceAc && lockGen == _onceGen) return;
-            _onceAc = id; _onceGen = lockGen;
-            NOSaveSystemPlugin.Log?.LogInfo("NOSAVE-THR " + label + " FOLLOW start path=" + path + " window=" + F(Window) + "s");
+            if (!_once.TryClaim(id, lockGen, _restoreSeq)) return;
+            NOSaveSystemPlugin.Log?.LogInfo("NOSAVE-THR " + label + " FOLLOW start path=" + path + " seq=" + _restoreSeq + " window=" + F(Window) + "s");
             Start(ac, label, lockGen);
         }
 

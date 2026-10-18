@@ -148,6 +148,18 @@ namespace NOSaveSystem
             return false;
         }
 
+        public sealed class OnceGate
+        {
+            private bool _any;
+            private int _ac, _gen, _seq;
+            public bool TryClaim(int ac, int gen, int seq)
+            {
+                if (_any && ac == _ac && gen == _gen && seq == _seq) return false;
+                _any = true; _ac = ac; _gen = gen; _seq = seq;
+                return true;
+            }
+        }
+
         public sealed class SrcClassifier
         {
             public int Frames, KeyFrames, FracFrames, CentreAfterFrac, RestFrac;

@@ -20,7 +20,7 @@ namespace NOSaveSystem
     {
         public const string PLUGIN_GUID = "com.lorenzo.nosavesystem";
         public const string PLUGIN_NAME = "NOSaveSystem";
-        public const string PLUGIN_VERSION = "1.0.0";
+        public const string PLUGIN_VERSION = "1.0.1";
         public const int BUILD_ID = 1;
 
         internal static ManualLogSource Log;
@@ -269,7 +269,7 @@ namespace NOSaveSystem
                 "Load",
                 "AllowRespawnMissing",
                 true,
-                "If true AND Spawner.IsServer, respawn ANY missing saved unit via Spawner.SpawnSavedUnit / TrySpawnVehicle / TrySpawnShip so nothing poofs. Default ON for SP/offline host fidelity. Multiplayer-safe: only when IsServer.");
+                "If true AND Spawner.IsServer, respawn ANY missing saved unit via Spawner.SpawnSavedUnit / TrySpawnVehicle / TrySpawnShip so nothing poofs. Default ON for singleplayer fidelity. Singleplayer-only: the mod is disabled outside singleplayer.");
             _restoreFactionEconomy = Config.Bind(
                 "Load",
                 "RestoreFactionEconomy",
@@ -932,6 +932,7 @@ namespace NOSaveSystem
             if (!TryEnterBusy("F6/Load")) return false;
             int token = NoSaveReconcile.TryAcquireLoad("F6/Load");
             if (token == 0) { ExitBusy(); RejectBusy("F6/Load (lock)"); return false; }
+            NoSaveThrottleFollow.BeginRestore();
             StartCoroutine(NoSaveCoroutines.Safe(RestoreMidMissionSnapshotCo(token), "F6/Load"));
             return true;
         }
@@ -1054,6 +1055,7 @@ namespace NOSaveSystem
             }
             _coreRunning = true;
             LastCoreOk = false;
+            NoSaveThrottleFollow.BeginRestore();
             try { yield return NoSaveCoroutines.Safe(RestoreMidMissionSnapshotCoreCoBody(), "F6 core"); }
             finally { _coreRunning = false; _pidIndex = null; }
         }

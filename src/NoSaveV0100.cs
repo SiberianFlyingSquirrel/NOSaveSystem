@@ -380,7 +380,7 @@ namespace NOSaveSystem
                 go.SetActive(true);
                 SetLabel(go, ButtonLabel);
                 var b = go.GetComponent<Button>();
-                if (b == null) { UnityEngine.Object.Destroy(go); Warn("main-menu SAVE MENU: clone has no Button -> destroyed, no button"); return false; }
+                if (b == null) { SetMainShift(false); UnityEngine.Object.Destroy(go); Warn("main-menu SAVE MENU: clone has no Button -> destroyed, no button"); return false; }
                 b.onClick.RemoveListener(OnMainButtonClicked);
                 b.onClick.AddListener(OnMainButtonClicked);
                 b.interactable = true;
@@ -638,6 +638,7 @@ namespace NOSaveSystem
         {
             var rt = go.transform as RectTransform; var trt = tpl.transform as RectTransform;
             go.transform.SetSiblingIndex(tpl.transform.GetSiblingIndex() + 1);
+            SetMainShift(false);
             _mmShifted.Clear(); _mmShiftOn = false; _mmShiftStep = 0f;
             if (parent == null || rt == null || trt == null) return _mmPlaceMode = "none(no RectTransform)";
             var lg = parent.GetComponent<LayoutGroup>();
@@ -671,9 +672,14 @@ namespace NOSaveSystem
 
         private static void SetMainShift(bool on)
         {
-            if (on == _mmShiftOn || _mmShiftStep <= 0f) return;
+            if (on == _mmShiftOn) return;
+            if (_mmShiftStep <= 0f) { if (!on) _mmShiftOn = false; return; }
             float d = on ? -_mmShiftStep : _mmShiftStep;
-            foreach (var c in _mmShifted) { try { if (c != null) c.anchoredPosition += new Vector2(0f, d); } catch { } }
+            for (int i = 0; i < _mmShifted.Count; i++)
+            {
+                var c = _mmShifted[i];
+                try { if (c != null) c.anchoredPosition += new Vector2(0f, d); } catch { }
+            }
             _mmShiftOn = on;
         }
 

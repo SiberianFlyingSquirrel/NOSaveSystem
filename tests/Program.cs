@@ -26,7 +26,7 @@ namespace NOSaveSystem.Tests
             Console.WriteLine("NOSaveSystem.Tests - ThrottleMath linked from plugin source");
             Console.WriteLine("--- invariants");
             HoldOutputIsSaved(); RoundTrip(); BlendShape(); BlendFloor(); ThrottleLower(); KeyboardRamp(); Seed();
-            MadSigmaSafe(); ProbeHelpers(); Classifier();
+            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey();
             Console.WriteLine("--- synthetic GameAccStep sequences (hold 2 s, probe 0.5 s, blend 0.75 s, released 0.5 s)");
             foreach (int fps in Fps) foreach (var sc in Scenarios()) Run(sc, fps);
             Console.WriteLine("--- total: {0} PASS, {1} FAIL, {2} SKIP", _pass, _fail, _skip);
@@ -181,6 +181,21 @@ namespace NOSaveSystem.Tests
             float err; int r = TM.FollowStep(0.5f, 0.52f, 0.01f, 4, out err); int r0 = TM.FollowStep(0.5f, 0.505f, 0.01f, 4, out _);
             Check("U9 FollowStep counts / resets, error=|eng-exp|", r == 5 && r0 == 0 && Math.Abs(err - 0.02f) < 1e-6f, "run=" + r + "/" + r0 + " err=" + F(err));
             Check("U9 FollowFixAllowed raise-only", TM.FixAllowed(0.4f, 0.6f) && !TM.FixAllowed(0.6f, 0.4f) && !TM.FixAllowed(0.5f, 0.5f), "");
+        }
+
+        private static void FollowOnceKey()
+        {
+            var claim = TM.NewFollowOnce();
+            const int ac = -1234, gen = 7;
+            bool first = claim(ac, gen, 1), dup = claim(ac, gen, 1);
+            Check("U11 FOLLOW once: first start per restore, duplicate in same restore skipped", first && !dup, "first=" + first + " dup=" + dup);
+            bool r2 = claim(ac, gen, 2), r2dup = claim(ac, gen, 2), r3 = claim(ac, gen, 3);
+            Check("U11 FOLLOW once: 2nd/3rd restore on same aircraft + same lock gen starts again", r2 && !r2dup && r3, "r2=" + r2 + " r2dup=" + r2dup + " r3=" + r3);
+            bool newGen = claim(ac, gen + 1, 3), otherAc = claim(ac - 1, gen + 1, 3);
+            Check("U11 FOLLOW once: new lock gen or other aircraft starts", newGen && otherAc, "newGen=" + newGen + " otherAc=" + otherAc);
+            var fresh = TM.NewFollowOnce();
+            bool zero = fresh(0, int.MinValue, 0);
+            Check("U11 FOLLOW once: fresh gate accepts any first key", zero, "first(0,min,0)=" + zero);
         }
 
         private static void Classifier()

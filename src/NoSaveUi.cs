@@ -185,6 +185,7 @@ namespace NOSaveSystem
             if (host0 == null) { SetStatus("NOSave plugin not ready"); yield break; }
             if (!host0.TryBeginLongBusy("Continue")) { SetStatus("NOSave busy"); yield break; }
             _continueInProgress = true;
+            NoSaveThrottleFollow.BeginRestore();
             try
             {
             SetStatus("NOSave Continue: loading mission...", 8f);

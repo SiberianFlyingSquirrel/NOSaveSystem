@@ -1,4 +1,4 @@
-# NOSaveSystem v1.0.0
+# NOSaveSystem v1.0.1
 
 **Singleplayer only - automatically inactive in multiplayer**
 
@@ -101,10 +101,10 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
 1. **Log fingerprint:** start the game and open `BepInEx\LogOutput.log`. The `FINGERPRINT` line of this release reads (`editorFlag` depends on the game build):
 
    ```
-   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.0 build=1 config=Release sha256=ebb1b1a03679a7b1363a1ed52e83aabd96db535cd353d895b401b0215c3f243f kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
+   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=1 config=Release sha256=<release DLL SHA-256, lowercase> kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
    ```
 
-   Check `version=1.0.0 build=1`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
+   Check `version=1.0.1 build=1`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded; it must match the DLL SHA-256 in `RELEASE_NOTES.md`).
 
 2. **DLL hash:** in PowerShell, in the game folder:
 
@@ -112,7 +112,7 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
    Get-FileHash .\BepInEx\plugins\NOSaveSystem.dll -Algorithm SHA256
    ```
 
-   Expected: `EBB1B1A03679A7B1363A1ED52E83AABD96DB535CD353D895B401B0215C3F243F` (also listed in `RELEASE_NOTES.md`).
+   Expected: the `BepInEx/plugins/NOSaveSystem.dll` SHA-256 listed in `RELEASE_NOTES.md`.
 
 ## License
 

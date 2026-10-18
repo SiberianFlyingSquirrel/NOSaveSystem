@@ -22,6 +22,7 @@ namespace NOSaveSystem.Tests
         public static float EpsStep(float sigma) => ThrottleMath.EpsStep(sigma, ProbeEps, ProbeSigmaK);
         public static float PassEps(float sigma) => ThrottleMath.PassEps(sigma, PassMinEps);
         public static bool DipStep(float ratio, float passEps, ref int run, int failSteps, ref bool failed) => ThrottleMath.DipStep(ratio, passEps, ref run, failSteps, ref failed);
+        public static System.Func<int, int, int, bool> NewFollowOnce() { var g = new ThrottleMath.OnceGate(); return g.TryClaim; }
         public static string Classify(float[] raws, string lastType)
         {
             var c = new ThrottleMath.SrcClassifier();
