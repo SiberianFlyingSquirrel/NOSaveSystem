@@ -1,7 +1,5 @@
 # NOSaveSystem v1.0.0
 
-**[Download the latest release](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/latest)** (grab the `.zip` under Assets)
-
 **Singleplayer only - automatically inactive in multiplayer**
 
 Mid-mission save/load for Nuclear Option. Saves a snapshot of the running mission (units, positions, velocities, fuel, damage, loadouts, faction funds/score, escalation, objective state) and restores it later, including after a game restart.
@@ -12,7 +10,7 @@ Mid-mission save/load for Nuclear Option. Saves a snapshot of the running missio
 
 ## Install
 
-Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
+[Download the latest release](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/latest) and grab the `.zip` under Assets. Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
 ## Usage
 
 The only NOSave UI is the **SAVE MENU** (pause menu and main menu). 
