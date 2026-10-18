@@ -20,8 +20,8 @@ namespace NOSaveSystem
     {
         public const string PLUGIN_GUID = "com.lorenzo.nosavesystem";
         public const string PLUGIN_NAME = "NOSaveSystem";
-        public const string PLUGIN_VERSION = "1.0.1";
-        public const int BUILD_ID = 4;
+        public const string PLUGIN_VERSION = "1.0.2";
+        public const int BUILD_ID = 1;
 
         internal static ManualLogSource Log;
         internal static NOSaveSystemPlugin Instance;
@@ -197,9 +197,18 @@ namespace NOSaveSystem
             {
                 var gs = GameManager.gameState;
                 if (gs == GameState.Menu) return true;
-                return gs == GameState.Uninitialized && MainMenu.State == MainMenu.LoadingState.Loaded && NoSaveV0100.MainMenuAlive;
+                if (gs != GameState.Uninitialized) return false;
+                bool loaded = MainMenu.State == MainMenu.LoadingState.Loaded && NoSaveV0100.MainMenuAlive;
+                return NoSaveMenuState.AtMainMenu(false, true, loaded, NetworkManagerNuclearOption.IsLoadingScene, NetworkActive());
             }
             catch { return false; }
+        }
+
+        private static bool NetworkActive()
+        {
+            var nm = NetworkManagerNuclearOption.i;
+            if (nm == null) return false;
+            return (nm.Server != null && nm.Server.Active) || (nm.Client != null && nm.Client.Active);
         }
 
         internal static bool ContinueAllowed()

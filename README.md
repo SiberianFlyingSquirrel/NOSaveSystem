@@ -1,4 +1,4 @@
-# NOSaveSystem v1.0.1
+# NOSaveSystem v1.0.2
 
 **Singleplayer only - automatically inactive in multiplayer**
 
@@ -10,7 +10,7 @@ Mid-mission save/load for Nuclear Option. Saves a snapshot of the running missio
 
 ## Install
 
-[Download NOSaveSystem](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/download/v1.0.1/NOSaveSystem-1.0.1.zip). Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
+[Download NOSaveSystem](https://github.com/SiberianFlyingSquirrel/NOSaveSystem/releases/download/v1.0.2/NOSaveSystem-1.0.2.zip). Extract the zip into the game folder (e.g. `C:\Program Files (x86)\Steam\steamapps\common\Nuclear Option`). This places the mod at `BepInEx/plugins/NOSaveSystem.dll`.
 ## Usage
 
 The only NOSave UI is the **SAVE MENU** (pause menu and main menu). 
@@ -46,7 +46,7 @@ All save/load/delete actions and hotkeys are no-ops, and all NOSave UI is hidden
 
 ### What is restored in flight
 
-- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s). The saved throttle is held during this time; keyboard throttle keys pressed during the hold are added on top and take over after a 0.75 s blend. 
+- Engines resume at their saved RPM/power/thrust from the first frame after loading (no spool-up). The saved state is held until the engine simulation, left running on its own for a short probe, stays at the saved state (at most 3 s; AI aircraft 1.5 s). The saved throttle is held during this time; throttle input during the hold (any device) is applied after a 0.75 s blend, and the engine stays at saved power until then. 
 - An engine that was destroyed when you saved stays dead from the first frame (no spool-up and die), the other engines keep their full power.
 - Landing gear and flaps that were moving when you saved continue moving from the same point.
 - After every load a `NOSAVE-VERIFY ... VERIFY PASS n/n` (or `VERIFY FAIL k/n`) line in the BepInEx log compares the live game against the save, field by field.
@@ -101,10 +101,10 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
 1. **Log fingerprint:** start the game and open `BepInEx\LogOutput.log`. The `FINGERPRINT` line of this release reads (`editorFlag` depends on the game build):
 
    ```
-   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.1 build=4 config=Release sha256=c99db776471b2c8bbe9b03c2cac7f1ee2893b2d30698569a9aa0e6e55253d212 kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
+   [Info   :NOSaveSystem] FINGERPRINT name=NOSaveSystem version=1.0.2 build=1 config=Release sha256=ff676f9325d3a7ed09cc10a20d86da7706240594106036c60d9083e4a54a8db7 kind=release (portable default SaveDirectory) file=NOSaveSystem.dll spLock=SinglePlayer+localServer+IsHost+LocalPlayer+AllPlayers<=1+!editor+mpLatch (no config bypass) editorFlag=...
    ```
 
-   Check `version=1.0.1 build=4`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
+   Check `version=1.0.2 build=1`, `kind=release` and the `sha256=` value (the hash of the DLL that was actually loaded).
 
 2. **DLL hash:** in PowerShell, in the game folder:
 
@@ -112,7 +112,7 @@ dotnet run -c Release --project tests/NOSaveSystem.Tests.csproj
    Get-FileHash .\BepInEx\plugins\NOSaveSystem.dll -Algorithm SHA256
    ```
 
-   Expected: `C99DB776471B2C8BBE9B03C2CAC7F1EE2893B2D30698569A9AA0E6E55253D212` (also listed in `RELEASE_NOTES.md`).
+   Expected: `FF676F9325D3A7ED09CC10A20D86DA7706240594106036C60D9083E4A54A8DB7` (also listed in `RELEASE_NOTES.md`).
 
 ## License
 

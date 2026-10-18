@@ -26,7 +26,7 @@ namespace NOSaveSystem.Tests
             Console.WriteLine("NOSaveSystem.Tests - ThrottleMath linked from plugin source");
             Console.WriteLine("--- invariants");
             HoldOutputIsSaved(); RoundTrip(); BlendShape(); BlendFloor(); ThrottleLower(); KeyboardRamp(); Seed();
-            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey(); EngineReArmKey(); PilotFixSeq();
+            MadSigmaSafe(); ProbeHelpers(); Classifier(); FollowOnceKey(); EngineReArmKey(); PilotFixSeq(); MainMenuGate();
             Console.WriteLine("--- synthetic GameAccStep sequences (hold 2 s, probe 0.5 s, blend 0.75 s, released 0.5 s)");
             foreach (int fps in Fps) foreach (var sc in Scenarios()) Run(sc, fps);
             Console.WriteLine("--- total: {0} PASS, {1} FAIL, {2} SKIP", _pass, _fail, _skip);
@@ -218,6 +218,25 @@ namespace NOSaveSystem.Tests
             int a = 5;
             bool same = TM.SeqCurrent(a, 5), staleB = !TM.SeqCurrent(a, 6), staleWrap = !TM.SeqCurrent(int.MaxValue, int.MinValue);
             Check("U13 PilotFix seq: same restore applies, newer restore skips stale run", same && staleB && staleWrap, "same=" + same + " stale=" + staleB + " wrap=" + staleWrap);
+        }
+
+        private static void MainMenuGate()
+        {
+            bool menu = TM.AtMenu(true, false, false, true, true) && TM.AtMenu(true, false, true, false, false);
+            Check("U14 main menu: gameState Menu counts as main menu", menu, "");
+            bool uninit = TM.AtMenu(false, true, true, false, false);
+            Check("U14 main menu: Uninitialized + main menu loaded, no scene load, no network", uninit, "");
+            bool noLoaded = !TM.AtMenu(false, true, false, false, false), loading = !TM.AtMenu(false, true, true, true, false), net = !TM.AtMenu(false, true, true, false, true);
+            Check("U14 main menu: Uninitialized rejected while menu not loaded / scene loading / server or client active", noLoaded && loading && net, "notLoaded=" + noLoaded + " loading=" + loading + " net=" + net);
+            Check("U14 main menu: other game states rejected", !TM.AtMenu(false, false, true, false, false), "");
+            int bad = 0;
+            for (int m = 0; m < 16; m++)
+            {
+                bool at = (m & 1) != 0, st = (m & 2) != 0, lo = (m & 4) != 0, ru = (m & 8) != 0;
+                if (TM.Settled(at, st, lo, ru) != (at && !st && !lo && !ru)) bad++;
+            }
+            bool noSteam = TM.Settled(TM.AtMenu(false, true, true, false, false), false, false, false);
+            Check("U14 menu settled: main menu, not stopping/loading/running (incl. Uninitialized no-Steam menu)", bad == 0 && noSteam, bad + " mismatches noSteam=" + noSteam);
         }
 
         private static void Classifier()

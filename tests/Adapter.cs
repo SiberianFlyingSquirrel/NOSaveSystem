@@ -25,6 +25,8 @@ namespace NOSaveSystem.Tests
         public static System.Func<int, int, int, bool> NewFollowOnce() { var g = new ThrottleMath.OnceGate(); return g.TryClaim; }
         public static EngineReArm ReArm(bool expired, int expiredSeq, bool hasLock, bool lockReleased, int lockSeq, int seq) => ThrottleMath.EngineReArmDecision(expired, expiredSeq, hasLock, lockReleased, lockSeq, seq);
         public static bool SeqCurrent(int captured, int now) => ThrottleMath.SeqStillCurrent(captured, now);
+        public static bool AtMenu(bool menu, bool uninit, bool mmLoaded, bool loading, bool net) => NoSaveMenuState.AtMainMenu(menu, uninit, mmLoaded, loading, net);
+        public static bool Settled(bool atMenu, bool stopping, bool loading, bool running) => NoSaveMenuState.Settled(atMenu, stopping, loading, running);
         public static string Classify(float[] raws, string lastType)
         {
             var c = new ThrottleMath.SrcClassifier();

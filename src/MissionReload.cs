@@ -182,12 +182,12 @@ namespace NOSaveSystem
                 try { running = MissionManager.IsRunning; } catch { }
                 try { gs = GameManager.gameState; } catch { }
 
-                if (!stopping && !loading && !running && gs == GameState.Menu)
+                if (NoSaveMenuState.Settled(NOSaveSystemPlugin.AtMainMenu(), stopping, loading, running))
                 {
                     plan?.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                        "  MR tear-down settled Menu after {0:F1}s", waited));
+                        "  MR tear-down settled Menu after {0:F1}s gs={1}", waited, gs));
                     NOSaveSystemPlugin.Log?.LogInfo(string.Format(CultureInfo.InvariantCulture,
-                        "MissionReload: tear-down settled Menu after {0:F1}s", waited));
+                        "MissionReload: tear-down settled Menu after {0:F1}s gs={1}", waited, gs));
                     yield break;
                 }
 
@@ -375,10 +375,10 @@ namespace NOSaveSystem
                         try { loading = NetworkManagerNuclearOption.IsLoadingScene; } catch { }
                         try { running = MissionManager.IsRunning; } catch { }
                         try { gs = GameManager.gameState; } catch { }
-                        if (!stopping && !loading && !running && gs == GameState.Menu)
+                        if (NoSaveMenuState.Settled(NOSaveSystemPlugin.AtMainMenu(), stopping, loading, running))
                         {
                             plan.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                                "  MR Continue menu verified after {0:F1}s", menuWait));
+                                "  MR Continue menu verified after {0:F1}s gs={1}", menuWait, gs));
                             break;
                         }
                         menuWait += Time.unscaledDeltaTime;

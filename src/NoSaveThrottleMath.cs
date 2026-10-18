@@ -6,6 +6,20 @@ namespace NOSaveSystem
 
     public enum EngineReArm { Proceed = 0, BlockExpired = 1, BlockReleased = 2, KeepExisting = 3, RetireAndProceed = 4, ClearExpiryAndProceed = 5 }
 
+    public static class NoSaveMenuState
+    {
+        public static bool AtMainMenu(bool gsMenu, bool gsUninitialized, bool mainMenuLoaded, bool loadingScene, bool networkActive)
+        {
+            if (gsMenu) return true;
+            return gsUninitialized && mainMenuLoaded && !loadingScene && !networkActive;
+        }
+
+        public static bool Settled(bool atMainMenu, bool stopping, bool loading, bool running)
+        {
+            return atMainMenu && !stopping && !loading && !running;
+        }
+    }
+
     public static class ThrottleMath
     {
         public const float BlendTime = 0.75f;
